@@ -2,175 +2,92 @@ import { Hono } from "hono";
 import type { Env } from "../types";
 
 /**
- * REST API endpoints for agent interaction.
+ * Thin REST proxy for agent @callable methods.
  *
- * These provide a REST interface to the agents' methods via DO stub.fetch(),
- * complementing the WebSocket/RPC path at /agents/*.
- * Useful for the dashboard and external integrations.
+ * Primary interaction should be via useAgent() WebSocket hooks on the dashboard.
+ * These REST endpoints exist for external integrations and non-WebSocket clients.
  *
- * Each agent implements an onRequest(request) handler that dispatches
- * based on the URL pathname to the appropriate callable method.
+ * Agents are accessed via Durable Object stub.fetch() to their onRequest handler.
+ * The @callable methods are the canonical API — these routes just wrap them.
  */
 export const agentRoutes = new Hono<{ Bindings: Env }>();
 
-/**
- * Helper: send a request to a Durable Object agent and return the JSON response.
- */
-async function agentFetch(
+async function callAgent(
   ns: DurableObjectNamespace,
-  instanceName: string,
-  path: string,
-  options?: { method?: string; body?: unknown },
-): Promise<Response> {
-  const id = ns.idFromName(instanceName);
+  name: string,
+  method: string,
+  body?: unknown
+): Promise<unknown> {
+  const id = ns.idFromName(name);
   const stub = ns.get(id);
-  const init: RequestInit = { method: options?.method ?? "GET" };
-  if (options?.body !== undefined) {
-    init.body = JSON.stringify(options.body);
-    init.headers = { "Content-Type": "application/json" };
-  }
-  return stub.fetch(new Request(`https://agent${path}`, init));
+  const init: RequestInit = body !== undefined
+    ? { method: "POST", body: JSON.stringify({ method, args: Array.isArray(body) ? body : [body] }), headers: { "Content-Type": "application/json" } }
+    : { method: "POST", body: JSON.stringify({ method, args: [] }), headers: { "Content-Type": "application/json" } };
+  const resp = await stub.fetch(new Request("https://agent/rpc", init));
+  return resp.json();
 }
 
-// ─── Price Monitor Agent ───
-
+// ─── Price Monitor ───
 agentRoutes.get("/monitor/status", async (c) => {
-  const resp = await agentFetch(c.env.PriceMonitorAgent, "default", "/getStatus");
-  const status = await resp.json();
-  return c.json(status);
+  return c.json(await callAgent(c.env.PriceMonitorAgent, "default", "getStatus"));
 });
 
 agentRoutes.post("/monitor/check", async (c) => {
-  const resp = await agentFetch(c.env.PriceMonitorAgent, "default", "/runMonitoringCheck", { method: "POST" });
-  const result = await resp.json();
-  return c.json(result);
+  return c.json(await callAgent(c.env.PriceMonitorAgent, "default", "runMonitoringCheck"));
 });
 
-// ─── Market Intelligence Agent ───
-
+// ─── Market Intelligence ───
 agentRoutes.get("/intelligence/latest", async (c) => {
-  const resp = await agentFetch(c.env.MarketIntelligenceAgent, "default", "/getLatestReport");
-  const report = await resp.json();
-  if (!report) return c.json({ error: "No reports generated yet" }, 404);
+  const report = await callAgent(c.env.MarketIntelligenceAgent, "default", "getLatestReport");
+  if (!report) return c.json({ error: "No reports yet" }, 404);
   return c.json(report);
-});
-
-agentRoutes.get("/intelligence/history", async (c) => {
-  const count = parseInt(c.req.query("count") || "7");
-  const resp = await agentFetch(c.env.MarketIntelligenceAgent, "default", "/getReportHistory", {
-    method: "POST",
-    body: { count },
-  });
-  const reports = await resp.json();
-  return c.json({ reports });
 });
 
 agentRoutes.post("/intelligence/generate", async (c) => {
-  const resp = await agentFetch(c.env.MarketIntelligenceAgent, "default", "/generateDailyReport", { method: "POST" });
-  const report = await resp.json();
-  return c.json(report);
+  return c.json(await callAgent(c.env.MarketIntelligenceAgent, "default", "generateDailyReport"));
 });
 
-// ─── Competitor Tracker Agent ───
-
+// ─── Competitor Tracker ───
 agentRoutes.get("/competitors/status", async (c) => {
-  const resp = await agentFetch(c.env.CompetitorTrackerAgent, "default", "/getStatus");
-  const status = await resp.json();
-  return c.json(status);
+  return c.json(await callAgent(c.env.CompetitorTrackerAgent, "default", "getStatus"));
 });
 
 agentRoutes.get("/competitors/gaps", async (c) => {
-  const resp = await agentFetch(c.env.CompetitorTrackerAgent, "default", "/getAllGaps");
-  const gaps = await resp.json();
-  return c.json({ gaps });
-});
-
-agentRoutes.get("/competitors/overpriced", async (c) => {
-  const resp = await agentFetch(c.env.CompetitorTrackerAgent, "default", "/getOverpriced", {
-    method: "POST",
-    body: { limit: 20 },
-  });
-  const overpriced = await resp.json();
-  return c.json({ overpriced });
-});
-
-agentRoutes.get("/competitors/underpriced", async (c) => {
-  const resp = await agentFetch(c.env.CompetitorTrackerAgent, "default", "/getUnderpriced", {
-    method: "POST",
-    body: { limit: 20 },
-  });
-  const underpriced = await resp.json();
-  return c.json({ underpriced });
+  return c.json({ gaps: await callAgent(c.env.CompetitorTrackerAgent, "default", "getAllGaps") });
 });
 
 agentRoutes.post("/competitors/scan", async (c) => {
-  const resp = await agentFetch(c.env.CompetitorTrackerAgent, "default", "/scanCompetitorPrices", { method: "POST" });
-  const result = await resp.json();
-  return c.json(result);
+  return c.json(await callAgent(c.env.CompetitorTrackerAgent, "default", "scanCompetitorPrices"));
 });
 
-// ─── Pricing Recommendation Agent ───
-
+// ─── Pricing Recommendations ───
 agentRoutes.get("/recommendations/pending", async (c) => {
-  const action = c.req.query("action") as "BUY" | "SELL" | "REPRICE" | undefined;
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/getPending", {
-    method: "POST",
-    body: { action },
-  });
-  const pending = await resp.json();
-  return c.json({ recommendations: pending });
-});
-
-agentRoutes.get("/recommendations/history", async (c) => {
-  const limit = parseInt(c.req.query("limit") || "20");
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/getHistory", {
-    method: "POST",
-    body: { limit },
-  });
-  const history = await resp.json();
-  return c.json({ history });
+  const action = c.req.query("action");
+  return c.json({ recommendations: await callAgent(c.env.PricingRecommendationAgent, "default", "getPending", action ? [action] : []) });
 });
 
 agentRoutes.get("/recommendations/status", async (c) => {
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/getStatus");
-  const status = await resp.json();
-  return c.json(status);
+  return c.json(await callAgent(c.env.PricingRecommendationAgent, "default", "getStatus"));
 });
 
 agentRoutes.post("/recommendations/generate", async (c) => {
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/generateRecommendations", {
-    method: "POST",
-  });
-  const result = await resp.json();
-  return c.json(result);
+  return c.json(await callAgent(c.env.PricingRecommendationAgent, "default", "generateRecommendations"));
 });
 
 agentRoutes.post("/recommendations/:id/approve", async (c) => {
   const recId = c.req.param("id");
   let body: { approvedBy?: string } = {};
-  try { body = await c.req.json(); } catch { /* empty body ok */ }
-  const approvedBy = body.approvedBy || "api-user";
-
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/approveRecommendation", {
-    method: "POST",
-    body: { id: recId, approvedBy },
-  });
-  const result = await resp.json();
-  if (!result) return c.json({ error: "Recommendation not found" }, 404);
+  try { body = await c.req.json(); } catch { /* ok */ }
+  const result = await callAgent(c.env.PricingRecommendationAgent, "default", "approveRecommendation", [recId, body.approvedBy || "api"]);
+  if (!result) return c.json({ error: "Not found" }, 404);
   return c.json(result);
 });
 
 agentRoutes.post("/recommendations/:id/reject", async (c) => {
   const recId = c.req.param("id");
   let body: { rejectedBy?: string } = {};
-  try { body = await c.req.json(); } catch { /* empty body ok */ }
-  const rejectedBy = body.rejectedBy || "api-user";
-
-  const resp = await agentFetch(c.env.PricingRecommendationAgent, "default", "/rejectRecommendation", {
-    method: "POST",
-    body: { id: recId, rejectedBy },
-  });
-  const result = await resp.json();
-  if (!result) return c.json({ error: "Recommendation not found" }, 404);
+  try { body = await c.req.json(); } catch { /* ok */ }
+  const result = await callAgent(c.env.PricingRecommendationAgent, "default", "rejectRecommendation", [recId, body.rejectedBy || "api"]);
+  if (!result) return c.json({ error: "Not found" }, 404);
   return c.json(result);
 });
