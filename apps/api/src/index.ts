@@ -11,12 +11,15 @@ import { marketRoutes } from "./routes/market";
 import { cardRoutes } from "./routes/cards";
 import { handleScheduled } from "./services/scheduler";
 import { handleIngestionQueue, handleSentimentQueue } from "./services/queue-consumer";
+import { apiKeyAuth, rateLimiter } from "./middleware/auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
 // Middleware
 app.use("*", cors());
 app.use("*", logger());
+app.use("/v1/*", apiKeyAuth);
+app.use("/v1/*", rateLimiter);
 
 // Health check
 app.get("/", (c) =>

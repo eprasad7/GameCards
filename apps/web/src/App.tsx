@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BrowserRouter, Routes, Route, useNavigate, useParams, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { api, type Card } from "./lib/api";
 import { SearchBar } from "./components/SearchBar";
@@ -24,8 +25,6 @@ const queryClient = new QueryClient({
   },
 });
 
-type View = "dashboard" | "search" | "alerts" | "evaluate";
-
 const CATEGORIES = [
   { label: "All Cards", value: "" },
   { label: "Pokemon", value: "pokemon" },
@@ -37,15 +36,43 @@ const CATEGORIES = [
 ] as const;
 
 const navTabs = [
-  { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
-  { id: "search" as const, label: "Card Search", icon: Search },
-  { id: "evaluate" as const, label: "Evaluate", icon: Calculator },
-  { id: "alerts" as const, label: "Alerts", icon: Bell },
+  { path: "/", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/search", label: "Card Search", icon: Search },
+  { path: "/evaluate", label: "Evaluate", icon: Calculator },
+  { path: "/alerts", label: "Alerts", icon: Bell },
 ];
 
-function AppContent() {
-  const [view, setView] = useState<View>("dashboard");
-  const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+// ─── Card Detail Page (route-aware) ───
+function CardPage() {
+  const { cardId } = useParams<{ cardId: string }>();
+  const navigate = useNavigate();
+
+  const { data: card, isLoading } = useQuery({
+    queryKey: ["card", cardId],
+    queryFn: () => api.getCard(cardId!),
+    enabled: !!cardId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!card) {
+    return (
+      <div className="py-12 text-center text-text-muted">Card not found</div>
+    );
+  }
+
+  return <CardDetail card={card as Card} onBack={() => navigate(-1)} />;
+}
+
+// ─── App Shell ───
+function AppShell() {
+  const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -63,38 +90,41 @@ function AppContent() {
   };
 
   const handleSelectCard = (card: Card) => {
-    setSelectedCard(card);
-    setView("search");
+    navigate(`/card/${card.id}`);
   };
+
+  // Determine active path for nav highlighting
+  const currentPath = window.location.pathname;
+  const activeTab = navTabs.find((t) => t.path === currentPath)?.path || "/";
 
   return (
     <div className="min-h-screen bg-bg-primary">
       {/* ─── Top Nav ─── */}
       <header className="sticky top-0 z-30 bg-bg-nav">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          <div className="flex items-center gap-2">
+          <button onClick={() => navigate("/")} className="flex items-center gap-2">
             <span className="text-xl font-extrabold tracking-tight text-text-inverse">
               Game<span className="text-accent">Cards</span>
             </span>
             <span className="hidden rounded-sm bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-text-inverse sm:block">
               Pricing Engine
             </span>
-          </div>
+          </button>
 
           <nav className="ml-8 hidden items-center gap-1 md:flex">
             {navTabs.map((tab) => (
               <button
-                key={tab.id}
-                onClick={() => { setView(tab.id); setSelectedCard(null); }}
+                key={tab.path}
+                onClick={() => navigate(tab.path)}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  view === tab.id
+                  activeTab === tab.path
                     ? "bg-bg-nav-hover text-text-inverse"
                     : "text-text-inverse/70 hover:bg-bg-nav-hover hover:text-text-inverse"
                 }`}
               >
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
-                {tab.id === "alerts" && alerts.length > 0 && (
+                {tab.path === "/alerts" && alerts.length > 0 && (
                   <span className="ml-1 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-bold text-text-inverse">
                     {alerts.length}
                   </span>
@@ -120,10 +150,10 @@ function AppContent() {
           <div className="border-t border-bg-nav-hover px-4 pb-3 md:hidden">
             {navTabs.map((tab) => (
               <button
-                key={tab.id}
-                onClick={() => { setView(tab.id); setSelectedCard(null); setMobileMenuOpen(false); }}
+                key={tab.path}
+                onClick={() => { navigate(tab.path); setMobileMenuOpen(false); }}
                 className={`flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium min-h-[44px] ${
-                  view === tab.id ? "bg-bg-nav-hover text-text-inverse" : "text-text-inverse/70"
+                  activeTab === tab.path ? "bg-bg-nav-hover text-text-inverse" : "text-text-inverse/70"
                 }`}
               >
                 <tab.icon className="h-4 w-4" />
@@ -134,7 +164,7 @@ function AppContent() {
         )}
       </header>
 
-      {/* ─── Category Tabs (functional) ─── */}
+      {/* ─── Category Tabs ─── */}
       <div className="border-b border-border bg-bg-card">
         <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-1">
           {CATEGORIES.map((cat) => (
@@ -153,56 +183,73 @@ function AppContent() {
         </div>
       </div>
 
-      {/* ─── Main Content ─── */}
+      {/* ─── Main Content (routed) ─── */}
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 lg:hidden">
           <SearchBar onSelect={handleSelectCard} category={activeCategory} />
         </div>
 
-        {selectedCard ? (
-          <CardDetail card={selectedCard} onBack={() => setSelectedCard(null)} />
-        ) : view === "dashboard" ? (
-          <div className="space-y-6">
-            <MarketOverview onCardSelect={handleSelectCard} />
-            {alerts.length > 0 && (
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-lg font-bold text-text-primary">Active Alerts</h2>
-                  <button onClick={() => setView("alerts")} className="text-sm font-medium text-accent hover:text-accent-hover">
-                    View all
-                  </button>
-                </div>
-                <AlertsList alerts={alerts.slice(0, 5)} onResolve={handleResolveAlert} />
+        <Routes>
+          <Route
+            path="/"
+            element={
+              <div className="space-y-6">
+                <MarketOverview onCardSelect={handleSelectCard} />
+                {alerts.length > 0 && (
+                  <div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h2 className="text-lg font-bold text-text-primary">Active Alerts</h2>
+                      <button onClick={() => navigate("/alerts")} className="text-sm font-medium text-accent hover:text-accent-hover">
+                        View all
+                      </button>
+                    </div>
+                    <AlertsList alerts={alerts.slice(0, 5)} onResolve={handleResolveAlert} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ) : view === "search" ? (
-          <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-text-primary">Card Search</h1>
-            <p className="text-sm text-text-secondary">
-              Find any graded card and view real-time pricing data
-              {activeCategory && ` — filtered to ${CATEGORIES.find((c) => c.value === activeCategory)?.label}`}
-            </p>
-          </div>
-        ) : view === "evaluate" ? (
-          <div className="space-y-6">
-            <h1 className="text-2xl font-bold text-text-primary">Price Evaluator</h1>
-            <p className="mb-2 text-sm text-text-secondary">
-              Get a buy/sell/hold recommendation at a given price
-            </p>
-            <EvaluateCard />
-          </div>
-        ) : view === "alerts" ? (
-          <div className="space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">Alerts</h1>
-              <p className="text-sm text-text-secondary">
-                {alerts.length} active alert{alerts.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-            <AlertsList alerts={alerts} onResolve={handleResolveAlert} />
-          </div>
-        ) : null}
+            }
+          />
+          <Route
+            path="/search"
+            element={
+              <div className="space-y-6">
+                <h1 className="text-2xl font-bold text-text-primary">Card Search</h1>
+                <p className="text-sm text-text-secondary">
+                  Find any graded card and view real-time pricing data
+                  {activeCategory && ` — filtered to ${CATEGORIES.find((c) => c.value === activeCategory)?.label}`}
+                </p>
+              </div>
+            }
+          />
+          <Route path="/card/:cardId" element={<CardPage />} />
+          <Route
+            path="/evaluate"
+            element={
+              <div className="space-y-6">
+                <h1 className="text-2xl font-bold text-text-primary">Price Evaluator</h1>
+                <p className="mb-2 text-sm text-text-secondary">
+                  Get a buy/sell/hold recommendation at a given price
+                </p>
+                <EvaluateCard />
+              </div>
+            }
+          />
+          <Route
+            path="/alerts"
+            element={
+              <div className="space-y-6">
+                <div>
+                  <h1 className="text-2xl font-bold text-text-primary">Alerts</h1>
+                  <p className="text-sm text-text-secondary">
+                    {alerts.length} active alert{alerts.length !== 1 ? "s" : ""}
+                  </p>
+                </div>
+                <AlertsList alerts={alerts} onResolve={handleResolveAlert} />
+              </div>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </main>
     </div>
   );
@@ -210,8 +257,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-    </QueryClientProvider>
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <AppShell />
+      </QueryClientProvider>
+    </BrowserRouter>
   );
 }

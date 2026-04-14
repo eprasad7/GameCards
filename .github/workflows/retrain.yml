@@ -1,0 +1,110 @@
+name: Weekly Model Retraining
+
+on:
+  schedule:
+    # Every Sunday at 2am UTC
+    - cron: "0 2 * * 0"
+  workflow_dispatch:
+    inputs:
+      skip_quality_gate:
+        description: "Skip MdAPE quality gate (emergency override)"
+        required: false
+        default: "false"
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  retrain:
+    name: Export → Train → Score → Upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: packages/ml-training/pyproject.toml
+
+      - name: Install ML pipeline
+        run: pip install -e packages/ml-training
+
+      - name: Export features from D1
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_D1_DATABASE_ID: ${{ secrets.CF_D1_DATABASE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          gamecards-export-features \
+            --output-features features.csv \
+            --output-training training_data.csv
+
+      - name: Validate export
+        run: |
+          echo "Training rows: $(wc -l < training_data.csv)"
+          echo "Feature rows: $(wc -l < features.csv)"
+          if [ $(wc -l < training_data.csv) -lt 100 ]; then
+            echo "ERROR: Too few training rows (<100). Aborting."
+            exit 1
+          fi
+
+      - name: Train models
+        run: |
+          gamecards-train \
+            --data training_data.csv \
+            --output models/
+
+      - name: Export to ONNX
+        run: |
+          gamecards-export \
+            --model-dir models/ \
+            --output onnx_models/
+
+      - name: Batch score all cards
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+        run: |
+          gamecards-score \
+            --model-dir models/ \
+            --features features.csv \
+            --output batch_predictions.json \
+            --upload
+
+      - name: Upload ONNX models to R2
+        env:
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ACCESS_KEY: ${{ secrets.R2_ACCESS_KEY }}
+          R2_SECRET_KEY: ${{ secrets.R2_SECRET_KEY }}
+        run: |
+          gamecards-export \
+            --model-dir models/ \
+            --output onnx_models/ \
+            --upload
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: training-artifacts
+          path: |
+            models/model_meta.json
+            batch_predictions.json
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## Retraining Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Training data: $(wc -l < training_data.csv) rows" >> $GITHUB_STEP_SUMMARY
+          echo "- Cards scored: $(python3 -c 'import json; print(len(json.load(open("batch_predictions.json"))))')" >> $GITHUB_STEP_SUMMARY
+          echo "- Model version: $(python3 -c 'import json; print(json.load(open("models/model_meta.json"))["version"])')" >> $GITHUB_STEP_SUMMARY
+          echo "- Conformal correction: $(python3 -c 'import json; print(json.load(open("models/model_meta.json")).get("conformal_correction", 0))')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Predictions uploaded to R2. Worker will pick them up within 10 minutes." >> $GITHUB_STEP_SUMMARY

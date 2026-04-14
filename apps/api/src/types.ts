@@ -26,6 +26,7 @@ export interface Env {
   REDDIT_CLIENT_ID: string;
   REDDIT_CLIENT_SECRET: string;
   POKEMON_PRICE_TRACKER_KEY: string;
+  API_KEY: string;
 }
 
 // ─── Domain Types ───

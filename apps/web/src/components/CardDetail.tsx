@@ -16,6 +16,7 @@ const GRADING_COMPANIES = ["PSA", "BGS", "CGC", "SGC", "RAW"];
 export function CardDetail({ card, onBack }: CardDetailProps) {
   const [grade, setGrade] = useState("10");
   const [gradingCompany, setGradingCompany] = useState("PSA");
+  const [historyDays, setHistoryDays] = useState(90);
 
   const { data: price, isLoading: priceLoading, isError: priceError } = useQuery({
     queryKey: ["price", card.id, grade, gradingCompany],
@@ -23,8 +24,8 @@ export function CardDetail({ card, onBack }: CardDetailProps) {
   });
 
   const { data: history, isLoading: historyLoading } = useQuery({
-    queryKey: ["history", card.id, grade],
-    queryFn: () => api.getHistory(card.id, 90, grade),
+    queryKey: ["history", card.id, grade, historyDays],
+    queryFn: () => api.getHistory(card.id, historyDays, grade),
   });
 
   const { data: sentiment } = useQuery({
@@ -145,6 +146,7 @@ export function CardDetail({ card, onBack }: CardDetailProps) {
               fairValue={price?.price}
               buyThreshold={price?.lower}
               sellThreshold={price?.upper}
+              onRangeChange={setHistoryDays}
             />
           )}
         </div>
