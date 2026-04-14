@@ -210,11 +210,15 @@ export async function batchPredict(env: Env): Promise<number> {
     `DELETE FROM model_predictions WHERE predicted_at < datetime('now', '-7 days')`
   ).bind().run();
 
+  // Load ALL features in one query (avoid per-card D1 reads on fallback path)
   const featureRows = await env.DB.prepare(
-    `SELECT card_id, grade, grading_company FROM feature_store`
+    `SELECT card_id, grade, grading_company, features FROM feature_store`
   )
     .bind()
     .all();
+
+  // Try loading batch predictions from R2 (one read, cached)
+  const batch = await loadBatchPredictions(env);
 
   const BATCH_SIZE = 50;
   let count = 0;
@@ -226,7 +230,21 @@ export async function batchPredict(env: Env): Promise<number> {
     const grade = row.grade as string;
     const gradingCompany = row.grading_company as string;
 
-    const prediction = await predictPrice(env, cardId, gradingCompany, grade);
+    // Check R2 batch predictions first (already cached in memory)
+    let prediction: PredictionResult | null = null;
+    if (batch) {
+      const key = predictionKey(cardId, gradingCompany, grade);
+      const bp = batch.get(key);
+      if (bp) {
+        prediction = { ...bp };
+      }
+    }
+
+    // Fallback: use features already loaded (no extra D1 query)
+    if (!prediction && row.features) {
+      const features = JSON.parse(row.features as string);
+      prediction = statisticalEstimation(features);
+    }
     if (!prediction || prediction.fair_value === 0) continue;
 
     stmts.push(
@@ -235,7 +253,14 @@ export async function batchPredict(env: Env): Promise<number> {
            (card_id, grade, grading_company, model_version,
             fair_value, p10, p25, p50, p75, p90,
             buy_threshold, sell_threshold, confidence, volume_bucket)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(card_id, grade, grading_company) DO UPDATE SET
+           model_version = excluded.model_version,
+           fair_value = excluded.fair_value, p10 = excluded.p10, p25 = excluded.p25,
+           p50 = excluded.p50, p75 = excluded.p75, p90 = excluded.p90,
+           buy_threshold = excluded.buy_threshold, sell_threshold = excluded.sell_threshold,
+           confidence = excluded.confidence, volume_bucket = excluded.volume_bucket,
+           predicted_at = datetime('now')`
       ).bind(
         cardId, grade, gradingCompany, prediction.model_version,
         prediction.fair_value, prediction.p10, prediction.p25,

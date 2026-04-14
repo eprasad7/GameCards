@@ -125,6 +125,10 @@ cardRoutes.post("/bulk", async (c) => {
     );
   });
 
-  await c.env.DB.batch(batch);
+  // Chunk to stay under D1's 100-statement batch limit
+  const CHUNK_SIZE = 90;
+  for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+    await c.env.DB.batch(batch.slice(i, i + CHUNK_SIZE));
+  }
   return c.json({ status: "ok", count: cards.length });
 });

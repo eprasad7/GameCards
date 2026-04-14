@@ -32,9 +32,15 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
     refetchInterval: 60_000,
   });
 
-  const handleMoverClick = (cardId: string, name: string) => {
+  const handleMoverClick = async (cardId: string) => {
     if (!onCardSelect) return;
-    onCardSelect({ id: cardId, name, set_name: "", set_year: 0, card_number: "", category: "", player_character: null, image_url: null });
+    try {
+      const card = await api.getCard(cardId);
+      onCardSelect(card as Card);
+    } catch {
+      // Fallback: navigate with minimal data, CardDetail will fetch the rest
+      onCardSelect({ id: cardId, name: cardId, set_name: "", set_year: 0, card_number: "", category: "", player_character: null, image_url: null });
+    }
   };
 
   if (isLoading) {
@@ -86,10 +92,10 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
             <h3 className="text-sm font-bold text-text-primary">Trending Now</h3>
           </div>
           <div className="flex gap-3 overflow-x-auto p-4">
-            {trending.trending.slice(0, 8).map((t: Record<string, unknown>, i: number) => (
+            {trending.trending.slice(0, 8).map((t: Record<string, unknown>) => (
               <button
-                key={i}
-                onClick={() => handleMoverClick(t.card_id as string, t.name as string)}
+                key={t.card_id as string}
+                onClick={() => handleMoverClick(t.card_id as string)}
                 className="shrink-0 rounded-lg border border-border bg-bg-primary px-3 py-2 text-left transition-colors hover:border-accent/30 hover:bg-bg-hover min-h-[44px]"
               >
                 <p className="text-sm font-semibold text-text-primary truncate max-w-[150px]">{t.name as string}</p>
@@ -111,7 +117,7 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
             {moversUp?.movers?.slice(0, 5).map((m, i) => (
               <button
                 key={m.card_id}
-                onClick={() => handleMoverClick(m.card_id, m.name)}
+                onClick={() => handleMoverClick(m.card_id)}
                 className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
                   i < 4 ? "border-b border-border" : ""
                 }`}
@@ -143,7 +149,7 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
             {moversDown?.movers?.slice(0, 5).map((m, i) => (
               <button
                 key={m.card_id}
-                onClick={() => handleMoverClick(m.card_id, m.name)}
+                onClick={() => handleMoverClick(m.card_id)}
                 className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
                   i < 4 ? "border-b border-border" : ""
                 }`}

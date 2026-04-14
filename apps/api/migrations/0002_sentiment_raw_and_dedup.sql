@@ -46,3 +46,6 @@ CREATE INDEX IF NOT EXISTS idx_sentiment_card ON sentiment_scores(card_id, rollu
 
 -- ─── New: dedup index on price_observations ───
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_obs_dedup ON price_observations(card_id, source, listing_url) WHERE listing_url IS NOT NULL;
+
+-- ─── New: unique constraint on model_predictions (one active prediction per card+grade) ───
+CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_unique ON model_predictions(card_id, grade, grading_company);

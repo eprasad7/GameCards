@@ -52,6 +52,9 @@ export default {
       await handleIngestionQueue(batch, env);
     } else if (queueName === "gamecards-sentiment") {
       await handleSentimentQueue(batch, env);
+    } else {
+      console.error(`Unknown queue: ${queueName}. Acking ${batch.messages.length} messages to prevent retry loop.`);
+      batch.ackAll();
     }
   },
 };

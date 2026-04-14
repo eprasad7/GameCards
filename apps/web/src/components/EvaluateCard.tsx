@@ -3,11 +3,7 @@ import { api, type EvaluateResponse, type Card } from "../lib/api";
 import { SearchBar } from "./SearchBar";
 import { DollarSign, Loader2 } from "lucide-react";
 
-interface EvaluateCardProps {
-  onCardSelect?: (card: Card) => void;
-}
-
-export function EvaluateCard({ onCardSelect }: EvaluateCardProps) {
+export function EvaluateCard() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [price, setPrice] = useState("");
   const [grade, setGrade] = useState("10");
@@ -62,10 +58,7 @@ export function EvaluateCard({ onCardSelect }: EvaluateCardProps) {
               </button>
             </div>
           ) : (
-            <SearchBar onSelect={(card) => {
-              setSelectedCard(card);
-              onCardSelect?.(card);
-            }} />
+            <SearchBar onSelect={setSelectedCard} />
           )}
         </div>
 

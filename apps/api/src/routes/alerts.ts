@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
+import { parsePositiveInt } from "../lib/params";
 
 export const alertRoutes = new Hono<{ Bindings: Env }>();
 
@@ -46,7 +47,7 @@ alertRoutes.post("/:id/resolve", async (c) => {
 
 // GET /v1/alerts/history — resolved alerts
 alertRoutes.get("/history", async (c) => {
-  const days = parseInt(c.req.query("days") || "30");
+  const days = parsePositiveInt(c.req.query("days"), 30, 365);
   const limit = Math.min(parseInt(c.req.query("limit") || "100"), 500);
 
   const results = await c.env.DB.prepare(

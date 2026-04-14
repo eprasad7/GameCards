@@ -275,10 +275,20 @@ def cli(data: str, output: str, lr: float, num_leaves: int):
         df = load_training_data(data)
         models = train_quantile_models(df, config)
         metrics = evaluate_models(models, df, config)
+        # Quality gate: abort before saving if model quality is unacceptable
+        mdape = metrics["mdape_overall"]
+        MAX_MDAPE = 50.0  # Maximum acceptable MdAPE before blocking deployment
+        if mdape > MAX_MDAPE:
+            logger.error(
+                f"QUALITY GATE FAILED: MdAPE {mdape:.1f}% exceeds threshold {MAX_MDAPE}%. "
+                f"Models will NOT be saved. Investigate data quality or feature drift."
+            )
+            raise SystemExit(1)
+
         saved_paths = save_models(models, output, config)
 
         logger.info(f"Training complete. Models saved to {output}")
-        logger.info(f"MdAPE: {metrics['mdape_overall']:.1f}%")
+        logger.info(f"MdAPE: {metrics['mdape_overall']:.1f}% (threshold: {MAX_MDAPE}%)")
         logger.info(f"Coverage (90%): {metrics['coverage_90']:.1f}%")
 
 

@@ -104,7 +104,7 @@ function AppContent() {
           </nav>
 
           <div className="ml-auto hidden flex-1 justify-end lg:flex">
-            <SearchBar onSelect={handleSelectCard} />
+            <SearchBar onSelect={handleSelectCard} category={activeCategory} />
           </div>
 
           <button
@@ -156,7 +156,7 @@ function AppContent() {
       {/* ─── Main Content ─── */}
       <main className="mx-auto max-w-7xl px-4 py-6">
         <div className="mb-4 lg:hidden">
-          <SearchBar onSelect={handleSelectCard} />
+          <SearchBar onSelect={handleSelectCard} category={activeCategory} />
         </div>
 
         {selectedCard ? (
@@ -190,7 +190,7 @@ function AppContent() {
             <p className="mb-2 text-sm text-text-secondary">
               Get a buy/sell/hold recommendation at a given price
             </p>
-            <EvaluateCard onCardSelect={handleSelectCard} />
+            <EvaluateCard />
           </div>
         ) : view === "alerts" ? (
           <div className="space-y-6">

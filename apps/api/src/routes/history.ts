@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
+import { parsePositiveInt } from "../lib/params";
 
 export const historyRoutes = new Hono<{ Bindings: Env }>();
 
@@ -8,7 +9,7 @@ historyRoutes.get("/:cardId", async (c) => {
   const cardId = c.req.param("cardId");
   const grade = c.req.query("grade");
   const gradingCompany = c.req.query("grading_company");
-  const days = parseInt(c.req.query("days") || "90");
+  const days = parsePositiveInt(c.req.query("days"), 90, 365);
   const source = c.req.query("source");
 
   let sql = `
@@ -45,7 +46,7 @@ historyRoutes.get("/:cardId/aggregates", async (c) => {
   const grade = c.req.query("grade") || "10";
   const gradingCompany = c.req.query("grading_company") || "PSA";
   const period = c.req.query("period") || "daily";
-  const days = parseInt(c.req.query("days") || "90");
+  const days = parsePositiveInt(c.req.query("days"), 90, 365);
 
   const results = await c.env.DB.prepare(
     `SELECT * FROM price_aggregates

@@ -5,9 +5,10 @@ import { useDebounce } from "../lib/hooks";
 
 interface SearchBarProps {
   onSelect: (card: Card) => void;
+  category?: string;
 }
 
-export function SearchBar({ onSelect }: SearchBarProps) {
+export function SearchBar({ onSelect, category }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Card[]>([]);
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,7 @@ export function SearchBar({ onSelect }: SearchBarProps) {
     }
     let cancelled = false;
     setLoading(true);
-    api.searchCards(debouncedQuery)
+    api.searchCards(debouncedQuery, category || undefined)
       .then((data) => {
         if (!cancelled) {
           setResults(data.cards);
@@ -36,7 +37,7 @@ export function SearchBar({ onSelect }: SearchBarProps) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [debouncedQuery]);
+  }, [debouncedQuery, category]);
 
   return (
     <div className="relative w-full max-w-md" role="combobox" aria-expanded={open} aria-haspopup="listbox">
@@ -50,7 +51,7 @@ export function SearchBar({ onSelect }: SearchBarProps) {
           onBlur={() => setTimeout(() => setOpen(false), 200)}
           placeholder="Search cards by name, set, or player..."
           aria-label="Search cards"
-          className="w-full rounded-md border-0 bg-white py-2 pl-9 pr-10 text-sm text-text-primary shadow-sm placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-accent"
+          className="w-full rounded-md border-0 bg-bg-card py-2 pl-9 pr-10 text-sm text-text-primary shadow-sm placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-accent"
         />
         {loading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-text-muted" />}
       </div>

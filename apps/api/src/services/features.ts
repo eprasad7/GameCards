@@ -164,13 +164,19 @@ async function computeCardFeatures(
       .bind(cardId, gradingCompany, grade, cardId, gradingCompany, grade)
       .first(),
 
-    // Sentiment trend: compare 7d to 30d mention counts
+    // Sentiment trend: compare 7d to 30d mention counts (latest rollup only)
     env.DB.prepare(
       `SELECT
-         (SELECT SUM(mention_count) FROM sentiment_scores WHERE card_id = ? AND period = '7d' ORDER BY rollup_date DESC LIMIT 1) as mentions_7d,
-         (SELECT SUM(mention_count) FROM sentiment_scores WHERE card_id = ? AND period = '30d' ORDER BY rollup_date DESC LIMIT 1) as mentions_30d`
+         (SELECT SUM(mention_count) FROM sentiment_scores
+          WHERE card_id = ? AND period = '7d'
+            AND rollup_date = (SELECT MAX(rollup_date) FROM sentiment_scores WHERE card_id = ? AND period = '7d')
+         ) as mentions_7d,
+         (SELECT SUM(mention_count) FROM sentiment_scores
+          WHERE card_id = ? AND period = '30d'
+            AND rollup_date = (SELECT MAX(rollup_date) FROM sentiment_scores WHERE card_id = ? AND period = '30d')
+         ) as mentions_30d`
     )
-      .bind(cardId, cardId)
+      .bind(cardId, cardId, cardId, cardId)
       .first(),
   ]);
 

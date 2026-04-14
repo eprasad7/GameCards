@@ -144,6 +144,7 @@ CREATE TABLE IF NOT EXISTS model_predictions (
   predicted_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE UNIQUE INDEX idx_predictions_unique ON model_predictions(card_id, grade, grading_company);
 CREATE INDEX idx_predictions_card ON model_predictions(card_id, grading_company, grade, predicted_at DESC);
 CREATE INDEX idx_predictions_version ON model_predictions(model_version);
 

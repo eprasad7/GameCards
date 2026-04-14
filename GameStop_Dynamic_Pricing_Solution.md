@@ -409,7 +409,7 @@ Twitter/X Filtered Stream (#PokemonTCG, #SportsCards)
 └──────────────────┬──────────────────────┘
                    │
                    ▼
-         TimescaleDB sentiment_scores table
+         D1 sentiment_scores table
          → Feeds into ML feature pipeline
 ```
 
@@ -601,7 +601,7 @@ GET  /v1/market/index
 
 | Week | Deliverable |
 |------|-------------|
-| 1 | TimescaleDB schema, SoldComps API integration, first eBay data flowing |
+| 1 | D1 schema + migrations, SoldComps API integration, first eBay data flowing |
 | 2 | PriceCharting API integration, PSA population scraping via GemRate |
 | 3 | Feature engineering pipeline (grade, velocity, price history features) |
 | 4 | LightGBM v1 trained on PriceCharting historical backfill + SoldComps 365-day data, initial backtest results |
@@ -695,6 +695,10 @@ GET  /v1/market/index
 | Fat-tailed prices break the model | Huber loss, log-transform, quantile regression, outlier detection |
 | eBay "Best Offer" bias | Detect and discount by 20%, or exclude from training |
 | Reddit API pricing changes | Budget for Standard tier, explore Pushshift archives for historical data |
+| D1 10GB database limit | Archive old price_observations to R2 (Parquet/CSV) at ~6 months; keep only recent windows in D1 |
+| Worker CPU time limits (30s paid) | Batch D1 writes at 90 statements; chunk large operations; use Queues for async processing |
+| KV eventual consistency across regions | Price cache TTL of 5 minutes limits staleness; critical evaluate endpoint reads D1 directly |
+| Worker 128MB memory limit | Batch predictions loaded from R2 JSON; for very large catalogs (>100K cards), paginate the batch file |
 
 ---
 
