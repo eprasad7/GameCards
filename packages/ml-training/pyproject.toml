@@ -1,0 +1,28 @@
+[project]
+name = "gamecards-ml"
+version = "0.1.0"
+description = "GameCards ML Training Pipeline — LightGBM quantile regression with ONNX export"
+requires-python = ">=3.11"
+dependencies = [
+    "lightgbm>=4.5",
+    "scikit-learn>=1.6",
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "onnx>=1.17",
+    "onnxmltools>=1.12",
+    "skl2onnx>=1.17",
+    "boto3>=1.35",           # R2 upload (S3-compatible)
+    "psycopg2-binary>=2.9",  # D1 HTTP proxy or direct Postgres
+    "mlflow>=2.18",
+    "shap>=0.46",
+    "click>=8.1",
+]
+
+[project.scripts]
+gamecards-train = "gamecards_ml.train:cli"
+gamecards-backtest = "gamecards_ml.backtest:cli"
+gamecards-export = "gamecards_ml.export_onnx:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

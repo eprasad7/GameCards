@@ -1,0 +1,9 @@
+# Copy this file to .dev.vars and fill in your API keys
+# wrangler dev reads these automatically
+
+SOLDCOMPS_API_KEY=your_soldcomps_api_key
+PRICECHARTING_API_KEY=your_40_char_pricecharting_token
+CARDHEDGER_API_KEY=your_cardhedger_api_key
+REDDIT_CLIENT_ID=your_reddit_client_id
+REDDIT_CLIENT_SECRET=your_reddit_client_secret
+POKEMON_PRICE_TRACKER_KEY=your_pokemon_price_tracker_key

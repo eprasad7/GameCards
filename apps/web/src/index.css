@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  /* ─── GameStop-inspired Color Tokens (OKLCH) ─── */
+
+  /* Surfaces — light content, dark nav */
+  --color-bg-primary: oklch(0.97 0.003 260);
+  --color-bg-secondary: oklch(0.94 0.005 260);
+  --color-bg-tertiary: oklch(0.90 0.007 260);
+  --color-bg-card: oklch(1.00 0 0);
+  --color-bg-hover: oklch(0.96 0.005 260);
+  --color-bg-nav: oklch(0.15 0.005 260);
+  --color-bg-nav-hover: oklch(0.22 0.008 260);
+
+  /* Text */
+  --color-text-primary: oklch(0.18 0.01 260);
+  --color-text-secondary: oklch(0.45 0.015 260);
+  --color-text-muted: oklch(0.60 0.015 260);
+  --color-text-inverse: oklch(0.97 0.005 260);
+
+  /* Borders */
+  --color-border: oklch(0.88 0.008 260);
+  --color-border-hover: oklch(0.78 0.012 260);
+
+  /* GameStop red accent */
+  --color-accent: oklch(0.55 0.24 27);
+  --color-accent-hover: oklch(0.50 0.24 27);
+  --color-accent-muted: oklch(0.55 0.24 27 / 0.10);
+
+  /* Status */
+  --color-success: oklch(0.55 0.18 150);
+  --color-warning: oklch(0.70 0.17 75);
+  --color-danger: oklch(0.55 0.24 27);
+  --color-info: oklch(0.55 0.15 245);
+
+  /* Trading signals */
+  --color-buy: oklch(0.50 0.17 150);
+  --color-sell: oklch(0.55 0.24 27);
+  --color-hold: oklch(0.65 0.16 75);
+
+  /* Pro pricing highlight */
+  --color-pro: oklch(0.55 0.24 27);
+  --color-pro-bg: oklch(0.55 0.24 27 / 0.08);
+
+  /* ─── Typography ─── */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  /* ─── Border Radius ─── */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-hover);
+}

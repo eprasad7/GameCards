@@ -1,0 +1,78 @@
+{
+  "name": "gamecards-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // D1 Database
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gamecards-db",
+      "database_id": "YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // KV Namespace — hot price cache
+  "kv_namespaces": [
+    {
+      "binding": "PRICE_CACHE",
+      "id": "YOUR_KV_NAMESPACE_ID"
+    }
+  ],
+
+  // R2 Bucket — model artifacts, raw data archive
+  "r2_buckets": [
+    {
+      "binding": "MODELS",
+      "bucket_name": "gamecards-models"
+    },
+    {
+      "binding": "DATA_ARCHIVE",
+      "bucket_name": "gamecards-data"
+    }
+  ],
+
+  // Queues — async ingestion
+  "queues": {
+    "producers": [
+      { "binding": "INGESTION_QUEUE", "queue": "gamecards-ingestion" },
+      { "binding": "SENTIMENT_QUEUE", "queue": "gamecards-sentiment" }
+    ],
+    "consumers": [
+      {
+        "queue": "gamecards-ingestion",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30
+      },
+      {
+        "queue": "gamecards-sentiment",
+        "max_batch_size": 10,
+        "max_batch_timeout": 30
+      }
+    ]
+  },
+
+  // Cron Triggers
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",
+      "*/5 * * * *",
+      "0 2 * * *",
+      "0 3 * * *",
+      "0 4 * * *",
+      "0 5 * * *"
+    ]
+  },
+
+  // Workers AI
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Environment variables (secrets set via wrangler secret)
+  "vars": {
+    "ENVIRONMENT": "development"
+  }
+}
