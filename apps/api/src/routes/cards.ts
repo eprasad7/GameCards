@@ -46,7 +46,12 @@ cardRoutes.get("/:id", async (c) => {
 
 // Create card
 cardRoutes.post("/", async (c) => {
-  const body = await c.req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
   const id =
     body.id || `${body.category}-${body.set_name}-${body.card_number}`.toLowerCase().replace(/\s+/g, "-");
 
@@ -78,7 +83,19 @@ cardRoutes.post("/", async (c) => {
 
 // Bulk upsert cards
 cardRoutes.post("/bulk", async (c) => {
-  const { cards } = await c.req.json();
+  let body: { cards: Record<string, unknown>[] };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+  const { cards } = body;
+  if (!Array.isArray(cards)) {
+    return c.json({ error: "cards must be an array" }, 400);
+  }
+  if (cards.length > 500) {
+    return c.json({ error: "Maximum 500 cards per batch" }, 400);
+  }
   const stmt = c.env.DB.prepare(
     `INSERT INTO card_catalog (id, name, set_name, set_year, card_number, category, player_character, team, rarity, image_url, pricecharting_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

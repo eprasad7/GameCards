@@ -40,28 +40,28 @@ export function PriceChart({ sales, fairValue, buyThreshold, sellThreshold }: Pr
         <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
           <defs>
             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#e53e3e" stopOpacity={0.15} />
-              <stop offset="100%" stopColor="#e53e3e" stopOpacity={0} />
+              <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.15} />
+              <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="date"
-            tick={{ fontSize: 11, fill: "#888" }}
-            axisLine={{ stroke: "#e2e2e2" }}
+            tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
+            axisLine={{ stroke: "var(--color-border)" }}
             tickLine={false}
           />
           <YAxis
-            tick={{ fontSize: 11, fill: "#888" }}
+            tick={{ fontSize: 11, fill: "var(--color-text-muted)" }}
             axisLine={false}
             tickLine={false}
             tickFormatter={(v) => `$${v}`}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#fff",
-              border: "1px solid #e2e2e2",
+              backgroundColor: "var(--color-bg-card)",
+              border: "1px solid var(--color-border)",
               borderRadius: "0.5rem",
-              color: "#1a1a1a",
+              color: "var(--color-text-primary)",
               fontSize: 13,
               boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
             }}
@@ -70,31 +70,31 @@ export function PriceChart({ sales, fairValue, buyThreshold, sellThreshold }: Pr
           {fairValue && (
             <ReferenceLine
               y={fairValue}
-              stroke="#3182ce"
+              stroke="var(--color-info)"
               strokeDasharray="4 4"
-              label={{ value: "Fair Value", fill: "#3182ce", fontSize: 11 }}
+              label={{ value: "Fair Value", fill: "var(--color-info)", fontSize: 11 }}
             />
           )}
           {buyThreshold && (
             <ReferenceLine
               y={buyThreshold}
-              stroke="#2f855a"
+              stroke="var(--color-buy)"
               strokeDasharray="4 4"
-              label={{ value: "Buy", fill: "#2f855a", fontSize: 11 }}
+              label={{ value: "Buy", fill: "var(--color-buy)", fontSize: 11 }}
             />
           )}
           {sellThreshold && (
             <ReferenceLine
               y={sellThreshold}
-              stroke="#e53e3e"
+              stroke="var(--color-sell)"
               strokeDasharray="4 4"
-              label={{ value: "Sell", fill: "#e53e3e", fontSize: 11 }}
+              label={{ value: "Sell", fill: "var(--color-sell)", fontSize: 11 }}
             />
           )}
           <Area
             type="monotone"
             dataKey="price"
-            stroke="#e53e3e"
+            stroke="var(--color-accent)"
             strokeWidth={2}
             fill="url(#priceGradient)"
           />

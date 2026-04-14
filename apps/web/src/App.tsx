@@ -26,6 +26,16 @@ const queryClient = new QueryClient({
 
 type View = "dashboard" | "search" | "alerts" | "evaluate";
 
+const CATEGORIES = [
+  { label: "All Cards", value: "" },
+  { label: "Pokemon", value: "pokemon" },
+  { label: "Baseball", value: "sports_baseball" },
+  { label: "Basketball", value: "sports_basketball" },
+  { label: "Football", value: "sports_football" },
+  { label: "MTG", value: "tcg_mtg" },
+  { label: "Yu-Gi-Oh", value: "tcg_yugioh" },
+] as const;
+
 const navTabs = [
   { id: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
   { id: "search" as const, label: "Card Search", icon: Search },
@@ -36,6 +46,7 @@ const navTabs = [
 function AppContent() {
   const [view, setView] = useState<View>("dashboard");
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
+  const [activeCategory, setActiveCategory] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: alertsData, refetch: refetchAlerts } = useQuery({
@@ -51,12 +62,16 @@ function AppContent() {
     refetchAlerts();
   };
 
+  const handleSelectCard = (card: Card) => {
+    setSelectedCard(card);
+    setView("search");
+  };
+
   return (
     <div className="min-h-screen bg-bg-primary">
-      {/* ─── Top Nav (GameStop-style black bar) ─── */}
+      {/* ─── Top Nav ─── */}
       <header className="sticky top-0 z-30 bg-bg-nav">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-          {/* Logo */}
           <div className="flex items-center gap-2">
             <span className="text-xl font-extrabold tracking-tight text-text-inverse">
               Game<span className="text-accent">Cards</span>
@@ -66,15 +81,11 @@ function AppContent() {
             </span>
           </div>
 
-          {/* Desktop Nav Tabs */}
           <nav className="ml-8 hidden items-center gap-1 md:flex">
             {navTabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setView(tab.id);
-                  setSelectedCard(null);
-                }}
+                onClick={() => { setView(tab.id); setSelectedCard(null); }}
                 className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                   view === tab.id
                     ? "bg-bg-nav-hover text-text-inverse"
@@ -92,36 +103,27 @@ function AppContent() {
             ))}
           </nav>
 
-          {/* Search (in header like GameStop) */}
           <div className="ml-auto hidden flex-1 justify-end lg:flex">
-            <SearchBar onSelect={(card) => { setSelectedCard(card); setView("search"); }} />
+            <SearchBar onSelect={handleSelectCard} />
           </div>
 
-          {/* Mobile menu toggle */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="ml-auto rounded-md p-2 text-text-inverse md:hidden"
+            className="ml-auto rounded-md p-2 text-text-inverse md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
         </div>
 
-        {/* Mobile dropdown */}
         {mobileMenuOpen && (
           <div className="border-t border-bg-nav-hover px-4 pb-3 md:hidden">
             {navTabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => {
-                  setView(tab.id);
-                  setSelectedCard(null);
-                  setMobileMenuOpen(false);
-                }}
-                className={`flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium ${
-                  view === tab.id
-                    ? "bg-bg-nav-hover text-text-inverse"
-                    : "text-text-inverse/70"
+                onClick={() => { setView(tab.id); setSelectedCard(null); setMobileMenuOpen(false); }}
+                className={`flex w-full items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium min-h-[44px] ${
+                  view === tab.id ? "bg-bg-nav-hover text-text-inverse" : "text-text-inverse/70"
                 }`}
               >
                 <tab.icon className="h-4 w-4" />
@@ -132,27 +134,29 @@ function AppContent() {
         )}
       </header>
 
-      {/* ─── Category Tabs (second bar like GameStop) ─── */}
+      {/* ─── Category Tabs (functional) ─── */}
       <div className="border-b border-border bg-bg-card">
         <div className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-1">
-          {["All Cards", "Pokemon", "Baseball", "Basketball", "Football", "MTG", "Yu-Gi-Oh"].map(
-            (cat) => (
-              <button
-                key={cat}
-                className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
-              >
-                {cat}
-              </button>
-            )
-          )}
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.value}
+              onClick={() => setActiveCategory(cat.value)}
+              className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeCategory === cat.value
+                  ? "bg-accent/10 text-accent"
+                  : "text-text-secondary hover:bg-bg-hover hover:text-text-primary"
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* ─── Main Content ─── */}
       <main className="mx-auto max-w-7xl px-4 py-6">
-        {/* Mobile search */}
         <div className="mb-4 lg:hidden">
-          <SearchBar onSelect={(card) => { setSelectedCard(card); setView("search"); }} />
+          <SearchBar onSelect={handleSelectCard} />
         </div>
 
         {selectedCard ? (
@@ -164,10 +168,7 @@ function AppContent() {
               <div>
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="text-lg font-bold text-text-primary">Active Alerts</h2>
-                  <button
-                    onClick={() => setView("alerts")}
-                    className="text-sm font-medium text-accent hover:text-accent-hover"
-                  >
+                  <button onClick={() => setView("alerts")} className="text-sm font-medium text-accent hover:text-accent-hover">
                     View all
                   </button>
                 </div>
@@ -180,6 +181,7 @@ function AppContent() {
             <h1 className="text-2xl font-bold text-text-primary">Card Search</h1>
             <p className="text-sm text-text-secondary">
               Find any graded card and view real-time pricing data
+              {activeCategory && ` — filtered to ${CATEGORIES.find((c) => c.value === activeCategory)?.label}`}
             </p>
           </div>
         ) : view === "evaluate" ? (
@@ -188,17 +190,15 @@ function AppContent() {
             <p className="mb-2 text-sm text-text-secondary">
               Get a buy/sell/hold recommendation at a given price
             </p>
-            <EvaluateCard />
+            <EvaluateCard onCardSelect={handleSelectCard} />
           </div>
         ) : view === "alerts" ? (
           <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-text-primary">Alerts</h1>
-                <p className="text-sm text-text-secondary">
-                  {alerts.length} active alert{alerts.length !== 1 ? "s" : ""}
-                </p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold text-text-primary">Alerts</h1>
+              <p className="text-sm text-text-secondary">
+                {alerts.length} active alert{alerts.length !== 1 ? "s" : ""}
+              </p>
             </div>
             <AlertsList alerts={alerts} onResolve={handleResolveAlert} />
           </div>

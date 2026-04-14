@@ -22,6 +22,7 @@ dependencies = [
 gamecards-train = "gamecards_ml.train:cli"
 gamecards-backtest = "gamecards_ml.backtest:cli"
 gamecards-export = "gamecards_ml.export_onnx:cli"
+gamecards-score = "gamecards_ml.batch_score:cli"
 
 [build-system]
 requires = ["hatchling"]

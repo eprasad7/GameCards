@@ -50,7 +50,7 @@ Currently, GameStop doesn't store price history. This is the foundation everythi
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Price History Database                         │
-│                    (TimescaleDB on PostgreSQL)                    │
+│                    (Cloudflare D1 — SQLite at the edge)           │
 │                                                                  │
 │  Tables:                                                         │
 │  ├── card_catalog        — master card registry with attributes  │
@@ -60,17 +60,20 @@ Currently, GameStop doesn't store price history. This is the foundation everythi
 │  │   *seller_id availability depends on feed; verify per source  │
 │  ├── price_aggregates    — daily/weekly rollups per card+grade   │
 │  ├── population_reports  — daily PSA/CGC/BGS pop snapshots      │
-│  ├── sentiment_scores    — daily sentiment per card from social  │
+│  ├── sentiment_raw       — individual sentiment observations     │
+│  ├── sentiment_scores    — rolled-up 24h/7d/30d sentiment        │
+│  ├── feature_store       — pre-computed ML features per card     │
 │  ├── model_predictions   — model outputs with confidence bands   │
 │  └── price_alerts        — triggered alerts for price movements  │
 │                                                                  │
-│  Hypertable partitioning on price_observations.date              │
-│  Continuous aggregates for real-time materialized views           │
-│  Retention policy: raw data 2 years, aggregates forever          │
+│  Dedup: unique indexes on (card_id, source, listing_url)         │
+│  Aggregation: application-level daily/weekly/monthly rollups     │
+│  Archival: old observations moved to R2 (Parquet/CSV)            │
+│  D1 limit: 10GB per database — plan for archival at ~6 months    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Why TimescaleDB:** It's PostgreSQL with native time-series extensions — continuous aggregates, compression, retention policies, real-time materialized views. GameStop's team already knows Postgres. No new technology to learn.
+**Why Cloudflare D1:** SQLite at the edge with zero cold starts, global replication, and ~$5-20/mo at moderate scale. No separate database server to manage. The team writes standard SQL. Trade-off: no native time-series extensions (handled in application code via cron-triggered aggregation).
 
 ### 1.4 Data Pipeline Architecture
 
@@ -82,34 +85,37 @@ Currently, GameStop doesn't store price history. This is the foundation everythi
         ┌──────────────────┼──────────────────┐
         │                  │                  │
    eBay/SoldComps    Reddit/Twitter     PriceCharting
-   (every 15 min)    (every 5 min)     (daily CSV)
+   (every 15 min)    (every 5 min)     (daily)
         │                  │                  │
         ▼                  ▼                  ▼
    ┌─────────────────────────────────────────────┐
-   │          Apache Airflow (Orchestration)      │
+   │     Cloudflare Cron Triggers + Queues        │
    │                                               │
-   │  DAG: ingest_ebay_sales      (every 15 min)  │
-   │  DAG: ingest_reddit_sentiment (every 5 min)  │
-   │  DAG: ingest_pricecharting    (daily 2am)    │
-   │  DAG: ingest_psa_population   (daily 3am)    │
-   │  DAG: compute_features        (daily 4am)    │
-   │  DAG: retrain_models          (weekly Sun)   │
-   │  DAG: generate_prices         (daily 5am)    │
-   │  DAG: detect_anomalies        (every 1 hr)   │
+   │  Cron: soldcomps ingestion   (every 15 min)  │
+   │  Cron: reddit sentiment      (every 5 min)   │
+   │  Cron: pricecharting          (daily 2am)    │
+   │  Cron: psa population         (daily 3am)    │
+   │  Cron: anomaly detection      (daily 4am)    │
+   │  Cron: aggregates + features  (daily 5am)    │
+   │  Cron: generate predictions   (daily 6am)    │
+   │  Cron: sentiment rollup       (hourly)       │
+   │  Queue: price observations    (async batch)  │
+   │  Queue: sentiment analysis    (async AI)     │
    └──────────────────┬──────────────────────────┘
                       │
                       ▼
    ┌─────────────────────────────────────────────┐
-   │        TimescaleDB (Price History)           │
-   │  + Redis (cache hot prices, rate limiting)   │
-   │  + S3 (raw data archive, model artifacts)    │
+   │        Cloudflare D1 (Price History)         │
+   │  + KV (cache hot prices, rate limiting)      │
+   │  + R2 (raw data archive, model artifacts)    │
+   │  + Workers AI (sentiment NLP)                │
    └──────────────────┬──────────────────────────┘
                       │
            ┌──────────┼──────────┐
            │          │          │
            ▼          ▼          ▼
       Pricing API  Dashboard  Alerts
-      (FastAPI)    (React)    (Slack/Email)
+      (Hono/Workers) (Vite/React) (in-app)
 ```
 
 ---
@@ -535,17 +541,28 @@ Action: Flag card for human review, exclude from model updates
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| **Data Storage** | TimescaleDB (PostgreSQL) | Time-series native, team knows Postgres |
-| **Cache** | Redis | Hot price lookups, rate limiting |
-| **Object Storage** | S3 | Raw data archive, model artifacts |
-| **Orchestration** | Apache Airflow | DAG-based pipeline scheduling |
-| **ML Training** | LightGBM, PyTorch, scikit-learn | Industry standard |
-| **ML Serving** | FastAPI + Redis cache | Sub-10ms price lookups |
-| **Experiment Tracking** | MLflow | Model versioning, A/B testing |
-| **Monitoring** | Grafana + Prometheus | Pipeline health, model drift |
-| **LLM (Sentiment)** | Claude API or local Gemma 4 | NLP classification |
-| **Frontend** | React dashboard | Price curves, alerts, admin |
-| **Infrastructure** | AWS (ECS/Fargate), Terraform | GameStop's existing stack |
+| **Data Storage** | Cloudflare D1 (SQLite) | Edge-deployed, zero cold starts, ~$5-20/mo |
+| **Cache** | Cloudflare KV | Hot price lookups, token caching, rate limiting |
+| **Object Storage** | Cloudflare R2 | Raw data archive, ONNX model artifacts (S3-compatible) |
+| **Orchestration** | Cloudflare Cron Triggers + Queues | Built-in scheduling, async batch processing |
+| **ML Training** | LightGBM, scikit-learn (offline) | Run on Modal/Railway/local, export to ONNX |
+| **ML Serving** | Batch predictions via R2 + statistical fallback | Pre-scored JSON loaded at edge, sub-5ms lookups |
+| **Experiment Tracking** | MLflow (local/self-hosted) | Model versioning, metric logging |
+| **Monitoring** | Cloudflare Analytics Engine + ingestion_log table | Pipeline health, built-in Workers analytics |
+| **NLP (Sentiment)** | Workers AI (Llama 3.1 8B + DistilBERT) | NER extraction + sentiment classification at edge |
+| **Frontend** | Vite + React + Tailwind v4 on Cloudflare Pages | Edge-deployed dashboard, GameStop-style UI |
+| **Infrastructure** | Cloudflare Workers (Hono framework) | Global edge deployment, no servers to manage |
+
+### 7.1.1 Security & Authentication
+
+> **Required before production deployment:**
+>
+> - **API authentication:** Cloudflare Access or API key middleware on all `/v1/*` routes. Dashboard requires GameStop SSO.
+> - **CORS restriction:** Lock to GameStop domains only (remove `cors("*")`).
+> - **Rate limiting:** Cloudflare rate limiting rules or KV-based per-key throttling.
+> - **Secrets management:** All API keys stored via `wrangler secret put`, never in code or `.env`.
+> - **Data privacy:** `seller_id` should be hashed before storage. Reddit `post_url` is public data. No PII collected from end users.
+> - **D1 access:** Restricted to Workers bindings only — no public database endpoint.
 
 ### 7.2 API Design
 
@@ -600,7 +617,7 @@ GET  /v1/market/index
 | 5 | Reddit sentiment pipeline (NER + classification) |
 | 6 | Anomaly detection (price outliers, seller concentration if seller_id available, data quality filters) |
 | 7 | Conformal prediction intervals, volume-aware routing |
-| 8 | Buy/sell decision API, FastAPI serving layer |
+| 8 | Buy/sell decision API, Hono/Workers serving layer |
 
 **Exit criteria:** Full pipeline running daily, sentiment features improving model by measurable delta, API serving prices with confidence intervals.
 
@@ -609,7 +626,7 @@ GET  /v1/market/index
 | Week | Deliverable |
 |------|-------------|
 | 9 | React dashboard (price curves, sentiment, alerts) |
-| 10 | Grafana monitoring, model drift detection, alerting |
+| 10 | Cloudflare Analytics monitoring, model drift detection, alerting |
 | 11 | A/B testing framework, automated retraining pipeline |
 | 12 | GameStop-specific features (trade-in data, inventory), integration with pricing system |
 
@@ -631,12 +648,12 @@ GET  /v1/market/index
 | | PriceCharting | Card Ladder (PSA) | Alt | **GameStop (Proposed)** |
 |---|---|---|---|---|
 | **Data sources** | eBay + own marketplace | 14 platforms | Multiple | eBay + Reddit + PSA pop + **store data** |
-| **ML pricing** | Algorithmic smoothing (no ML) | Unknown | Likely gradient boosting | LightGBM ensemble + uncertainty |
+| **ML pricing** | Algorithmic smoothing (no ML) | Unknown | Likely gradient boosting | LightGBM quantile regression (batch) + statistical serving |
 | **Sentiment** | None | None | Unknown | Reddit + Twitter NLP |
 | **Update frequency** | Daily | Near real-time | Near real-time | Hybrid (daily + event-driven) |
 | **Uncertainty** | None | None | None | Conformal prediction intervals |
 | **Physical retail data** | No | No | No | **Yes — trade-ins, foot traffic, inventory** |
-| **Anomaly detection** | Manual review | Unknown | Unknown | Automated (shill, manipulation, data quality) |
+| **Anomaly detection** | Manual review | Unknown | Unknown | Automated (price-level outliers, seller concentration, data quality) |
 
 **GameStop's unfair advantage:** The combination of online market data + physical store trade-in/inventory data + grading submission volume. No online-only competitor can replicate this.
 
@@ -653,10 +670,13 @@ GET  /v1/market/index
 | PriceCharting (Legendary) | ~$25 |
 | PokemonPriceTracker (Business) | $99 |
 | Reddit API (Standard, prorated) | $1,000 |
-| Twitter/X (pay-per-use) | $500 |
-| AWS infrastructure (Fargate, RDS, S3, Redis) | ~$2,000 |
-| MLflow/Grafana hosting | ~$200 |
-| **Total** | **~$3,932/month** |
+| Twitter/X (pay-per-use, Phase 2+) | $500 |
+| Cloudflare Workers Paid plan | $5 |
+| Cloudflare D1 + KV + R2 + Queues | ~$30-50 |
+| Cloudflare Workers AI | ~$10-50 |
+| ML training compute (Modal/Railway) | ~$20-50 |
+| MLflow (local/self-hosted) | $0-20 |
+| **Total** | **~$1,800-$1,900/month** |
 
 **vs. Palantir/vendor alternative:** $100K-500K+/year for a fraction of the functionality.
 

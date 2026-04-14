@@ -24,42 +24,46 @@ interface SentimentMessage {
     text: string;
     source: "reddit" | "twitter";
     post_url: string;
-    engagement: number; // upvotes/likes
+    engagement: number;
   };
 }
 
+const D1_BATCH_LIMIT = 90; // Stay under D1's 100-statement limit
+
 /**
  * Process batched price observations from the ingestion queue.
+ * Ack AFTER successful DB write to prevent message loss.
+ * Uses INSERT OR IGNORE with listing_url dedup to prevent duplicate observations.
  */
 export async function handleIngestionQueue(
   batch: MessageBatch,
   env: Env
 ): Promise<void> {
   const stmt = env.DB.prepare(
-    `INSERT INTO price_observations (card_id, source, price_usd, sale_date, grade, grading_company, grade_numeric, sale_type, listing_url, seller_id, bid_count)
+    `INSERT OR IGNORE INTO price_observations
+       (card_id, source, price_usd, sale_date, grade, grading_company, grade_numeric, sale_type, listing_url, seller_id, bid_count)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
-  const inserts = [];
+  const inserts: D1PreparedStatement[] = [];
+  const pendingMessages: Message[] = [];
+  const skippedMessages: Message[] = [];
 
   for (const msg of batch.messages) {
     const { type, data } = msg.body as IngestionMessage;
     if (type !== "price_observation") {
-      msg.ack();
+      skippedMessages.push(msg);
       continue;
     }
 
-    // Apply data quality filters before inserting
     if (data.price_usd <= 0 || data.price_usd > 1_000_000) {
-      msg.ack();
+      skippedMessages.push(msg);
       continue;
     }
 
-    // Best Offer adjustment — flag for downstream handling
+    // Best Offer adjustment
     let adjustedPrice = data.price_usd;
-    let saleType = data.sale_type;
     if (data.sale_type === "best_offer") {
-      // Apply 80% discount factor as documented in the spec
       adjustedPrice = data.price_usd * 0.80;
     }
 
@@ -72,23 +76,41 @@ export async function handleIngestionQueue(
         data.grade,
         data.grading_company,
         data.grade_numeric,
-        saleType,
+        data.sale_type,
         data.listing_url,
         data.seller_id,
         data.bid_count
       )
     );
+    pendingMessages.push(msg);
+  }
 
+  // Ack skipped messages immediately (filtered out, not DB-dependent)
+  for (const msg of skippedMessages) {
     msg.ack();
   }
 
-  if (inserts.length > 0) {
-    await env.DB.batch(inserts);
+  // Write in batches respecting D1 limit, then ack
+  for (let i = 0; i < inserts.length; i += D1_BATCH_LIMIT) {
+    const chunk = inserts.slice(i, i + D1_BATCH_LIMIT);
+    const msgChunk = pendingMessages.slice(i, i + D1_BATCH_LIMIT);
+
+    try {
+      await env.DB.batch(chunk);
+      // Ack only after successful write
+      for (const msg of msgChunk) {
+        msg.ack();
+      }
+    } catch (err) {
+      // Don't ack — messages will be retried
+      console.error("Ingestion batch insert failed:", err);
+    }
   }
 }
 
 /**
  * Process social media posts for sentiment analysis via Workers AI.
+ * Uses INSERT OR IGNORE with post_url dedup to prevent counting the same post twice.
  */
 export async function handleSentimentQueue(
   batch: MessageBatch,
@@ -102,12 +124,10 @@ export async function handleSentimentQueue(
     }
 
     try {
-      // Use Workers AI for sentiment classification
       const result = await env.AI.run("@cf/huggingface/distilbert-sst-2-int8", {
         text: data.text,
       });
 
-      // Map to -1 to 1 scale
       const label = (result as { label: string; score: number }[])?.[0];
       const score = label
         ? label.label === "POSITIVE"
@@ -115,19 +135,19 @@ export async function handleSentimentQueue(
           : -label.score
         : 0;
 
-      // Insert individual sentiment observation (raw data).
-      // The hourly rollup job aggregates these into 24h/7d/30d buckets.
-      const today = new Date().toISOString().split("T")[0];
+      // INSERT OR IGNORE — unique on (card_id, source, post_url) prevents
+      // the same Reddit post from being counted across multiple 5-min polls
       await env.DB.prepare(
-        `INSERT INTO sentiment_raw (card_id, source, score, post_url, engagement, observed_at)
+        `INSERT OR IGNORE INTO sentiment_raw (card_id, source, score, post_url, engagement, observed_at)
          VALUES (?, ?, ?, ?, ?, datetime('now'))`
       )
         .bind(data.card_id, data.source, score, data.post_url, data.engagement)
         .run();
+
+      msg.ack();
     } catch (err) {
       console.error("Sentiment analysis failed:", err);
+      // Don't ack — will retry
     }
-
-    msg.ack();
   }
 }

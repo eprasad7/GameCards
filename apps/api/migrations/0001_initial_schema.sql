@@ -49,6 +49,7 @@ CREATE INDEX idx_price_obs_card_grade ON price_observations(card_id, grading_com
 CREATE INDEX idx_price_obs_source ON price_observations(source, sale_date DESC);
 CREATE INDEX idx_price_obs_date ON price_observations(sale_date DESC);
 CREATE INDEX idx_price_obs_anomaly ON price_observations(is_anomaly) WHERE is_anomaly = 1;
+CREATE UNIQUE INDEX idx_price_obs_dedup ON price_observations(card_id, source, listing_url) WHERE listing_url IS NOT NULL;
 
 -- ─── Price Aggregates ───
 -- Daily/weekly/monthly rollups per card+grade
@@ -102,6 +103,7 @@ CREATE TABLE IF NOT EXISTS sentiment_raw (
 
 CREATE INDEX idx_sentiment_raw_card ON sentiment_raw(card_id, observed_at DESC);
 CREATE INDEX idx_sentiment_raw_date ON sentiment_raw(observed_at DESC);
+CREATE UNIQUE INDEX idx_sentiment_raw_dedup ON sentiment_raw(card_id, source, post_url) WHERE post_url IS NOT NULL;
 
 -- ─── Sentiment Scores ───
 -- Rolled-up sentiment per card+source+period, refreshed hourly.

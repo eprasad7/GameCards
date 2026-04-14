@@ -50,7 +50,7 @@ export function AlertsList({ alerts, onResolve }: AlertsListProps) {
           </div>
           <button
             onClick={() => onResolve(alert.id)}
-            className="shrink-0 rounded-md p-1.5 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary"
+            className="shrink-0 rounded-md p-2.5 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Resolve alert"
           >
             <X className="h-4 w-4" />

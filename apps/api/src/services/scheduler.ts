@@ -9,114 +9,114 @@ import { computeAggregates } from "./aggregates";
 import { batchPredict } from "./inference";
 import { rollUpSentiment } from "./sentiment-rollup";
 
-/**
- * Cron Trigger handler — routes to the right ingestion job
- * based on the cron schedule that fired.
- *
- * Cron expressions from wrangler.jsonc:
- *   "* /15 * * * *"  → SoldComps/eBay ingestion
- *   "* /5 * * * *"   → Reddit sentiment
- *   "0 2 * * *"      → PriceCharting daily
- *   "0 3 * * *"      → PSA population reports
- *   "0 4 * * *"      → Feature computation + aggregates
- *   "0 5 * * *"      → Generate prices (batchPredict → model_predictions)
- *   "0 6 * * *"      → Anomaly detection
- *   "0 * * * *"       → Sentiment rollup (hourly 24h→7d→30d)
- */
+// Cron Trigger handler — routes to the right ingestion job.
+//
+// Pipeline ordering (critical — anomaly must run before features/predictions):
+//   every 15 min  → SoldComps/eBay ingestion
+//   every 5 min   → Reddit sentiment ingestion
+//   hourly        → Sentiment rollup (24h→7d→30d)
+//   0 2 daily     → PriceCharting
+//   0 3 daily     → PSA population reports
+//   0 4 daily     → Anomaly detection (MUST run before features)
+//   0 5 daily     → Aggregates + feature computation
+//   0 6 daily     → Generate prices (batchPredict → model_predictions)
 export async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
   const cron = event.cron;
 
-  const logStart = async (source: string, runType: string) => {
-    await env.DB.prepare(
-      `INSERT INTO ingestion_log (source, run_type, status) VALUES (?, ?, 'started')`
-    )
-      .bind(source, runType)
-      .run();
+  // Map cron → source name for consistent logging
+  const cronSourceMap: Record<string, string> = {
+    "*/15 * * * *": "soldcomps",
+    "*/5 * * * *": "reddit",
+    "0 * * * *": "sentiment_rollup",
+    "0 2 * * *": "pricecharting",
+    "0 3 * * *": "population",
+    "0 4 * * *": "anomaly",
+    "0 5 * * *": "features",
+    "0 6 * * *": "predictions",
   };
 
-  const logComplete = async (source: string, count: number) => {
-    await env.DB.prepare(
-      `UPDATE ingestion_log SET status = 'completed', records_processed = ?, completed_at = datetime('now')
-       WHERE source = ? AND status = 'started'
-       ORDER BY started_at DESC LIMIT 1`
-    )
-      .bind(count, source)
-      .run();
-  };
+  const source = cronSourceMap[cron];
+  if (!source) return;
 
-  const logError = async (source: string, error: string) => {
-    await env.DB.prepare(
-      `UPDATE ingestion_log SET status = 'failed', error_message = ?, completed_at = datetime('now')
-       WHERE source = ? AND status = 'started'
-       ORDER BY started_at DESC LIMIT 1`
-    )
-      .bind(error, source)
-      .run();
-  };
+  const logId = await logStart(env, source);
 
   try {
+    let count = 0;
+
     switch (cron) {
-      case "*/15 * * * *": {
-        await logStart("soldcomps", "scheduled");
-        const count = await ingestSoldComps(env);
-        await logComplete("soldcomps", count);
+      case "*/15 * * * *":
+        count = await ingestSoldComps(env);
         break;
-      }
 
-      case "*/5 * * * *": {
-        await logStart("reddit", "scheduled");
-        const count = await ingestRedditSentiment(env);
-        await logComplete("reddit", count);
+      case "*/5 * * * *":
+        count = await ingestRedditSentiment(env);
         break;
-      }
 
-      case "0 2 * * *": {
-        await logStart("pricecharting", "daily");
-        const count = await ingestPriceCharting(env);
-        await logComplete("pricecharting", count);
+      case "0 * * * *":
+        count = await rollUpSentiment(env);
         break;
-      }
 
-      case "0 3 * * *": {
-        await logStart("population", "daily");
-        const count = await ingestPopulationReports(env);
-        await logComplete("population", count);
+      case "0 2 * * *":
+        count = await ingestPriceCharting(env);
         break;
-      }
 
-      case "0 4 * * *": {
-        await logStart("features", "daily");
+      case "0 3 * * *":
+        count = await ingestPopulationReports(env);
+        break;
+
+      case "0 4 * * *":
+        // Anomaly detection runs BEFORE features/predictions
+        // so flagged outliers are excluded from downstream computation
+        count = await runAnomalyDetection(env);
+        break;
+
+      case "0 5 * * *":
+        // Aggregates + features (after anomaly detection)
         await computeAggregates(env);
-        const count = await computeFeatures(env);
-        await logComplete("features", count);
+        count = await computeFeatures(env);
         break;
-      }
 
-      case "0 5 * * *": {
-        await logStart("predictions", "daily");
-        const count = await batchPredict(env);
-        await logComplete("predictions", count);
+      case "0 6 * * *":
+        // Predictions (after features are computed)
+        count = await batchPredict(env);
         break;
-      }
-
-      case "0 6 * * *": {
-        await logStart("anomaly", "daily");
-        const count = await runAnomalyDetection(env);
-        await logComplete("anomaly", count);
-        break;
-      }
-
-      case "0 * * * *": {
-        // Hourly sentiment rollup — aggregate 24h scores into 7d and 30d
-        await logStart("sentiment_rollup", "hourly");
-        const count = await rollUpSentiment(env);
-        await logComplete("sentiment_rollup", count);
-        break;
-      }
     }
+
+    await logComplete(env, logId, count);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    await logError(cron, error);
-    console.error(`Scheduled job ${cron} failed:`, error);
+    await logError(env, logId, error);
+    console.error(`Scheduled job ${source} (${cron}) failed:`, error);
   }
+}
+
+// ─── Logging helpers (use subquery to work on D1/SQLite) ───
+
+async function logStart(env: Env, source: string): Promise<number> {
+  const result = await env.DB.prepare(
+    `INSERT INTO ingestion_log (source, run_type, status) VALUES (?, 'scheduled', 'started') RETURNING id`
+  )
+    .bind(source)
+    .first();
+  return (result?.id as number) || 0;
+}
+
+async function logComplete(env: Env, logId: number, count: number): Promise<void> {
+  if (!logId) return;
+  await env.DB.prepare(
+    `UPDATE ingestion_log SET status = 'completed', records_processed = ?, completed_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(count, logId)
+    .run();
+}
+
+async function logError(env: Env, logId: number, error: string): Promise<void> {
+  if (!logId) return;
+  await env.DB.prepare(
+    `UPDATE ingestion_log SET status = 'failed', error_message = ?, completed_at = datetime('now')
+     WHERE id = ?`
+  )
+    .bind(error, logId)
+    .run();
 }

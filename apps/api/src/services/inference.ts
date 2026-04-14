@@ -3,11 +3,13 @@ import type { Env } from "../types";
 /**
  * ML inference service.
  *
- * Strategy:
- * 1. Check R2 for per-quantile ONNX models (uploaded by Python training pipeline)
- * 2. If models exist, load metadata + run inference via Workers AI
- * 3. If no models, fall back to statistical estimation from feature store
- * 4. Volume-aware routing: different confidence/interval widths by volume bucket
+ * Serving strategy (in priority order):
+ * 1. Batch predictions from R2 (batch_predictions.json, written by batch_score.py)
+ * 2. Statistical fallback from feature store (if no ML predictions available)
+ *
+ * The batch_score.py pipeline (run externally) loads trained LightGBM models,
+ * scores all cards, applies conformal calibration + NRV-based buy/sell thresholds,
+ * and uploads batch_predictions.json to R2. This file is the working ML serving path.
  */
 
 interface PredictionResult {
@@ -24,84 +26,58 @@ interface PredictionResult {
   model_version: string;
 }
 
-interface ModelMeta {
-  version: string;
-  quantiles: number[];
-  feature_columns: string[];
-  onnx_files: Record<string, string>;
+interface BatchPrediction {
+  card_id: string;
+  grade: string;
+  grading_company: string;
+  model_version: string;
+  fair_value: number;
+  p10: number;
+  p25: number;
+  p50: number;
+  p75: number;
+  p90: number;
+  buy_threshold: number;
+  sell_threshold: number;
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  volume_bucket: "high" | "medium" | "low";
 }
 
-// Cached model metadata per isolate lifetime
-let cachedMeta: ModelMeta | null = null;
-let metaLoadedAt = 0;
-const META_TTL_MS = 5 * 60 * 1000; // re-check R2 every 5 minutes
+// In-memory cache of batch predictions (keyed by "cardId:gradingCompany:grade")
+let predictionCache: Map<string, BatchPrediction> | null = null;
+let cacheLoadedAt = 0;
+const CACHE_TTL_MS = 10 * 60 * 1000; // re-check R2 every 10 minutes
+
+function predictionKey(cardId: string, gradingCompany: string, grade: string): string {
+  return `${cardId}:${gradingCompany}:${grade}`;
+}
 
 /**
- * Load model metadata from R2. Cached in-memory per isolate.
+ * Load batch predictions from R2 into an in-memory lookup map.
+ * Cached per isolate with a 10-minute TTL.
  */
-async function getModelMeta(env: Env): Promise<ModelMeta | null> {
-  if (cachedMeta && Date.now() - metaLoadedAt < META_TTL_MS) {
-    return cachedMeta;
+async function loadBatchPredictions(env: Env): Promise<Map<string, BatchPrediction> | null> {
+  if (predictionCache && Date.now() - cacheLoadedAt < CACHE_TTL_MS) {
+    return predictionCache;
   }
-  const obj = await env.MODELS.get("models/lightgbm_quantile_latest.json");
+
+  const obj = await env.MODELS.get("models/batch_predictions.json");
   if (!obj) return null;
-  cachedMeta = (await obj.json()) as ModelMeta;
-  metaLoadedAt = Date.now();
-  return cachedMeta;
-}
 
-/**
- * Prepare the feature vector in the order the ONNX model expects.
- */
-function buildFeatureVector(
-  features: Record<string, unknown>,
-  featureColumns: string[]
-): number[] {
-  return featureColumns.map((col) => {
-    const v = features[col];
-    if (typeof v === "boolean") return v ? 1 : 0;
-    if (typeof v === "number") return v;
-    return 0;
-  });
-}
+  const predictions = (await obj.json()) as BatchPrediction[];
+  const map = new Map<string, BatchPrediction>();
+  for (const p of predictions) {
+    map.set(predictionKey(p.card_id, p.grading_company, p.grade), p);
+  }
 
-/**
- * Run inference for a single quantile using a per-quantile ONNX model stored in R2.
- *
- * Workers don't have a native ONNX runtime yet, so we use a two-tier approach:
- * 1. If the training pipeline has pre-scored all cards and written predictions
- *    directly to D1 (via the R2-triggered batch job), we just read those.
- * 2. Otherwise we fall back to statistical estimation.
- *
- * When onnxruntime-web becomes stable on Workers, replace this with direct
- * ONNX inference using the per-quantile model files in R2.
- */
-async function runOnnxModels(
-  env: Env,
-  features: Record<string, unknown>,
-  meta: ModelMeta
-): Promise<PredictionResult | null> {
-  // Check for pre-scored predictions uploaded by the training pipeline.
-  // The Python pipeline can optionally batch-score all cards and write a
-  // predictions.json to R2 alongside the ONNX files.
-  const preScored = await env.MODELS.get("models/batch_predictions.json");
-  if (!preScored) return null;
-
-  // TODO: When onnxruntime-web is stable on Cloudflare Workers, load per-quantile
-  // ONNX files directly:
-  //   for (const q of meta.quantiles) {
-  //     const onnxFile = meta.onnx_files[String(q)];
-  //     const modelBytes = await env.MODELS.get(`models/${onnxFile}`);
-  //     // run ort.InferenceSession.create(modelBytes) + session.run(featureVector)
-  //   }
-  // For now, per-card inference from R2 pre-scored JSON is the working path.
-
-  return null;
+  predictionCache = map;
+  cacheLoadedAt = Date.now();
+  return map;
 }
 
 /**
  * Generate price predictions for a card.
- * Uses ONNX model if available, falls back to statistical estimation.
+ * Checks batch predictions first, falls back to statistical estimation.
  */
 export async function predictPrice(
   env: Env,
@@ -109,7 +85,29 @@ export async function predictPrice(
   gradingCompany: string,
   grade: string
 ): Promise<PredictionResult | null> {
-  // Get pre-computed features
+  // Try batch predictions from R2 (ML model output)
+  const batch = await loadBatchPredictions(env);
+  if (batch) {
+    const key = predictionKey(cardId, gradingCompany, grade);
+    const bp = batch.get(key);
+    if (bp) {
+      return {
+        fair_value: bp.fair_value,
+        p10: bp.p10,
+        p25: bp.p25,
+        p50: bp.p50,
+        p75: bp.p75,
+        p90: bp.p90,
+        buy_threshold: bp.buy_threshold,
+        sell_threshold: bp.sell_threshold,
+        confidence: bp.confidence,
+        volume_bucket: bp.volume_bucket,
+        model_version: bp.model_version,
+      };
+    }
+  }
+
+  // Fallback: statistical estimation from feature store
   const featureRow = await env.DB.prepare(
     `SELECT features FROM feature_store
      WHERE card_id = ? AND grade = ? AND grading_company = ?`
@@ -120,21 +118,12 @@ export async function predictPrice(
   if (!featureRow) return null;
 
   const features = JSON.parse(featureRow.features as string);
-
-  // Try ONNX model path
-  const meta = await getModelMeta(env);
-  if (meta) {
-    const onnxResult = await runOnnxModels(env, features, meta);
-    if (onnxResult) return onnxResult;
-  }
-
-  // Fallback: statistical estimation based on volume bucket
   return statisticalEstimation(features);
 }
 
 /**
- * Statistical fallback estimation when ONNX model is unavailable.
- * Routes to different strategies based on volume bucket.
+ * Statistical fallback estimation when batch predictions are unavailable.
+ * Produces NRV-based buy thresholds matching the spec (Section 3.5).
  */
 function statisticalEstimation(
   features: Record<string, number | boolean | string>
@@ -145,7 +134,6 @@ function statisticalEstimation(
   const volatility = (features.price_volatility_30d as number) || 0;
   const momentum = (features.price_momentum as number) || 1;
 
-  // Base price: weighted average of recent prices
   const basePrice = avgPrice30d > 0
     ? avgPrice30d * 0.7 + avgPrice90d * 0.3
     : avgPrice90d > 0
@@ -154,20 +142,15 @@ function statisticalEstimation(
 
   if (basePrice === 0) {
     return {
-      fair_value: 0,
-      p10: 0, p25: 0, p50: 0, p75: 0, p90: 0,
-      buy_threshold: 0,
-      sell_threshold: 0,
-      confidence: "LOW",
-      volume_bucket: volumeBucket,
+      fair_value: 0, p10: 0, p25: 0, p50: 0, p75: 0, p90: 0,
+      buy_threshold: 0, sell_threshold: 0,
+      confidence: "LOW", volume_bucket: volumeBucket,
       model_version: "statistical-v1",
     };
   }
 
-  // Adjust for momentum
   const adjustedPrice = basePrice * (momentum > 0 ? momentum : 1);
 
-  // Width of prediction intervals based on volume and volatility
   let intervalMultiplier: number;
   let confidence: "HIGH" | "MEDIUM" | "LOW";
 
@@ -193,13 +176,9 @@ function statisticalEstimation(
   const p75 = p50 * (1 + intervalMultiplier * 0.8);
   const p90 = p50 * (1 + intervalMultiplier * 1.5);
 
-  // NRV-based buy threshold (matching spec Section 3.5)
-  const MARKETPLACE_FEE = 0.13;
-  const SHIPPING = 5.00;
-  const RETURN_RATE = 0.03;
-  const REQUIRED_MARGIN = 0.20;
-  const nrv = p50 * (1 - MARKETPLACE_FEE) * (1 - RETURN_RATE) - SHIPPING;
-  const maxBuyPrice = nrv * (1 - REQUIRED_MARGIN);
+  // NRV-based buy threshold (Section 3.5)
+  const nrv = p50 * (1 - 0.13) * (1 - 0.03) - 5.00;
+  const maxBuyPrice = nrv * (1 - 0.20);
 
   return {
     fair_value: round2(p50),
@@ -222,17 +201,20 @@ function round2(n: number): number {
 
 /**
  * Batch predict prices for all cards with features.
- * Called by the daily "0 5 * * *" cron via scheduler.
- * Writes rows to model_predictions that the serving layer reads.
+ * Called by the daily "0 6 * * *" cron via scheduler.
+ * Writes to model_predictions that the serving layer reads.
  */
 export async function batchPredict(env: Env): Promise<number> {
   const featureRows = await env.DB.prepare(
-    `SELECT card_id, grade, grading_company, features FROM feature_store`
+    `SELECT card_id, grade, grading_company FROM feature_store`
   )
     .bind()
     .all();
 
+  const BATCH_SIZE = 50;
   let count = 0;
+  const stmts: D1PreparedStatement[] = [];
+  const keysToInvalidate: string[] = [];
 
   for (const row of featureRows.results) {
     const cardId = row.card_id as string;
@@ -242,26 +224,40 @@ export async function batchPredict(env: Env): Promise<number> {
     const prediction = await predictPrice(env, cardId, gradingCompany, grade);
     if (!prediction || prediction.fair_value === 0) continue;
 
-    await env.DB.prepare(
-      `INSERT INTO model_predictions
-         (card_id, grade, grading_company, model_version,
-          fair_value, p10, p25, p50, p75, p90,
-          buy_threshold, sell_threshold, confidence, volume_bucket)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(
+    stmts.push(
+      env.DB.prepare(
+        `INSERT INTO model_predictions
+           (card_id, grade, grading_company, model_version,
+            fair_value, p10, p25, p50, p75, p90,
+            buy_threshold, sell_threshold, confidence, volume_bucket)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
         cardId, grade, gradingCompany, prediction.model_version,
         prediction.fair_value, prediction.p10, prediction.p25,
         prediction.p50, prediction.p75, prediction.p90,
         prediction.buy_threshold, prediction.sell_threshold,
         prediction.confidence, prediction.volume_bucket
       )
-      .run();
+    );
 
-    // Invalidate KV cache for this card
-    await env.PRICE_CACHE.delete(`price:${cardId}:${gradingCompany}:${grade}`);
-
+    keysToInvalidate.push(`price:${cardId}:${gradingCompany}:${grade}`);
     count++;
+
+    // Flush batch at BATCH_SIZE to avoid D1 100-statement limit
+    if (stmts.length >= BATCH_SIZE) {
+      await env.DB.batch(stmts);
+      stmts.length = 0;
+    }
+  }
+
+  // Flush remaining
+  if (stmts.length > 0) {
+    await env.DB.batch(stmts);
+  }
+
+  // Invalidate KV cache
+  for (const key of keysToInvalidate) {
+    await env.PRICE_CACHE.delete(key);
   }
 
   return count;

@@ -36,7 +36,7 @@ export function SentimentGauge({ sentiment }: SentimentGaugeProps) {
             className="h-full rounded-full transition-all duration-500"
             style={{
               width: `${pct}%`,
-              background: "linear-gradient(90deg, #e53e3e, #ecc94b, #2f855a)",
+              background: "linear-gradient(90deg, var(--color-sell), var(--color-hold), var(--color-buy))",
             }}
           />
         </div>
