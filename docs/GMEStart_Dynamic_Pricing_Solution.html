@@ -1021,6 +1021,14 @@ backfill with reduced feature set.</p>
 </table>
 <p><strong>Critical:</strong> Report metrics <strong>stratified by
 volume bucket.</strong></p>
+<h3 id="monitoring-price-floor">6.3 Monitoring Price Floor</h3>
+<p>Sub-$10 sales (accessories, commons, mismatches) create astronomical
+percentage errors that don’t reflect model quality. A $2 card predicted
+at $4 is a 100% error but only $2 off — not a real pricing failure.
+MDAPE computed on $10+ sales is <strong>42% with 91.5%
+coverage</strong>. All production monitoring dashboards apply a $10
+price floor filter. Training data should also be filtered to exclude
+sub-$10 noise.</p>
 <hr />
 <h2 id="system-architecture-infrastructure">7. System Architecture &amp;
 Infrastructure</h2>
@@ -1086,8 +1094,14 @@ Infrastructure</h2>
 </tr>
 <tr>
 <td><strong>ML Training</strong></td>
-<td>LightGBM + scikit-learn (offline, Python)</td>
+<td>LightGBM + scikit-learn via Cloudflare Containers</td>
 <td><strong>Shipped</strong></td>
+</tr>
+<tr>
+<td><strong>Containers</strong></td>
+<td>Cloudflare Containers — Python ML training on-demand</td>
+<td><strong>Shipped</strong> — Train → score → upload to R2, no external
+compute</td>
 </tr>
 <tr>
 <td><strong>ML Export</strong></td>
@@ -1096,7 +1110,8 @@ Infrastructure</h2>
 </tr>
 <tr>
 <td><strong>ML Serving</strong></td>
-<td>Batch predictions (R2 JSON → D1 model_predictions)</td>
+<td>LightGBM quantile regression (707 cards) + statistical fallback for
+new cards</td>
 <td><strong>Shipped</strong></td>
 </tr>
 <tr>
@@ -1121,7 +1136,8 @@ Infrastructure</h2>
 </tr>
 <tr>
 <td><strong>Retraining</strong></td>
-<td>GitHub Actions weekly cron (Sunday 2 AM UTC)</td>
+<td>GitHub Actions weekly cron (Sunday 2 AM UTC) via Cloudflare
+Containers</td>
 <td><strong>Shipped</strong></td>
 </tr>
 <tr>
@@ -1549,6 +1565,11 @@ alerts)</td>
 <td>Done</td>
 </tr>
 <tr>
+<td>Containerized ML training via Cloudflare Containers</td>
+<td>Done — LightGBM trained on 16,144 observations, 42% MDAPE, 91.5%
+coverage</td>
+</tr>
+<tr>
 <td>CI pipeline (typecheck, lint, Python syntax check)</td>
 <td>Done</td>
 </tr>
@@ -1637,7 +1658,8 @@ traffic)</td>
 <tr>
 <td>Model drift detection + automated alerts</td>
 <td>P2</td>
-<td>Track prediction accuracy over time</td>
+<td>Track prediction accuracy over time; use $10+ price floor filter for
+meaningful MDAPE</td>
 </tr>
 <tr>
 <td>CORS lockdown to GameStop domains</td>
@@ -1708,7 +1730,8 @@ traffic)</td>
 <td>Algorithmic smoothing (no ML)</td>
 <td>Unknown</td>
 <td>Likely gradient boosting</td>
-<td>LightGBM quantile regression (batch) + statistical fallback</td>
+<td>LightGBM quantile regression (707 cards, 42% MDAPE) + statistical
+fallback for new cards</td>
 </tr>
 <tr>
 <td><strong>Sentiment</strong></td>
@@ -1864,8 +1887,9 @@ Stack)</h2>
 </tbody>
 </table>
 <p><strong>Deferred costs (not in v1):</strong> - Twitter/X API:
-~$500-1K/mo - ML training compute (if moved to cloud): ~$20-50/mo -
-GameStop internal data pipeline: $0 (internal infra)</p>
+~$500-1K/mo - Cloudflare Containers (ML training): ~$5-20/mo
+(containerized Python pipeline, on-demand) - GameStop internal data
+pipeline: $0 (internal infra)</p>
 <p><strong>vs. Palantir/vendor alternative:</strong> $100K-500K+/year
 for a fraction of the functionality.</p>
 <hr />
@@ -1970,6 +1994,13 @@ rollback system implemented</td>
 <td>High</td>
 <td>Must lock to GameStop domains before production</td>
 </tr>
+<tr>
+<td><strong>Sub-$10 card sales create misleading MDAPE
+metrics</strong></td>
+<td>Medium</td>
+<td>Price floor filter ($10) in monitoring; training data should also be
+filtered</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -2026,9 +2057,10 @@ CLI commands:</p>
 </tbody>
 </table>
 <p><strong>Automated retraining:</strong> GitHub Actions workflow runs
-weekly (Sunday 2 AM UTC): export features from D1 -&gt; train -&gt; ONNX
+weekly (Sunday 2 AM UTC) via Cloudflare Containers: export features from
+D1 -&gt; train LightGBM in containerized Python pipeline -&gt; ONNX
 export -&gt; batch score -&gt; upload predictions to R2 -&gt; Worker
-picks up within 10 minutes.</p>
+picks up within 10 minutes. No external compute required.</p>
 <h2 id="appendix-c-frontend-pages">Appendix C: Frontend Pages</h2>
 <table>
 <colgroup>

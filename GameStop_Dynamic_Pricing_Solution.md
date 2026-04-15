@@ -385,6 +385,10 @@ Anomaly detection runs daily at **4 AM UTC** (before features at 5 AM, predictio
 
 **Critical:** Report metrics **stratified by volume bucket.**
 
+### 6.3 Monitoring Price Floor
+
+Sub-$10 sales (accessories, commons, mismatches) create astronomical percentage errors that don't reflect model quality. A $2 card predicted at $4 is a 100% error but only $2 off — not a real pricing failure. MDAPE computed on $10+ sales is **42% with 91.5% coverage**. All production monitoring dashboards apply a $10 price floor filter. Training data should also be filtered to exclude sub-$10 noise.
+
 ---
 
 ## 7. System Architecture & Infrastructure
@@ -402,14 +406,15 @@ Anomaly detection runs daily at **4 AM UTC** (before features at 5 AM, predictio
 | **Agents** | Cloudflare Durable Objects (Agents SDK) | **Shipped** — 4 agents |
 | **NLP** | Workers AI (Gemma 4 26B + DistilBERT) | **Shipped** |
 | **Browser Rendering** | Cloudflare headless Chrome | **Shipped** — Reddit scraping without API |
-| **ML Training** | LightGBM + scikit-learn (offline, Python) | **Shipped** |
+| **ML Training** | LightGBM + scikit-learn via Cloudflare Containers | **Shipped** |
+| **Containers** | Cloudflare Containers — Python ML training on-demand | **Shipped** — Train → score → upload to R2, no external compute |
 | **ML Export** | ONNX via onnxmltools/skl2onnx → R2 | **Shipped** |
-| **ML Serving** | Batch predictions (R2 JSON → D1 model_predictions) | **Shipped** |
+| **ML Serving** | LightGBM quantile regression (707 cards) + statistical fallback for new cards | **Shipped** |
 | **Experiment Tracking** | MLflow (local/self-hosted) | **Shipped** |
 | **Frontend** | Vite + React + Tailwind v4 + React Router | **Shipped** |
 | **Auth** | API key middleware on `/v1/*` + agent routes | **Shipped** |
 | **CI** | GitHub Actions (typecheck, lint, Python syntax) | **Shipped** |
-| **Retraining** | GitHub Actions weekly cron (Sunday 2 AM UTC) | **Shipped** |
+| **Retraining** | GitHub Actions weekly cron (Sunday 2 AM UTC) via Cloudflare Containers | **Shipped** |
 | **Monitoring** | Cloudflare Analytics + `ingestion_log` table | **Shipped** |
 | **A/B Testing** | Model comparison framework | **DEFERRED** |
 | **GameStop Integration** | Internal DB for trade-in/inventory data | **DEFERRED** |
@@ -660,6 +665,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Pipeline health monitoring (`/v1/system/health`, `ingestion_log`) | Done |
 | Model rollback system (`POST /v1/system/rollback`) | Done |
 | Automated weekly retraining (GitHub Actions, Sunday 2 AM) | Done |
+| Containerized ML training via Cloudflare Containers | Done — LightGBM trained on 16,144 observations, 42% MDAPE, 91.5% coverage |
 | CI pipeline (typecheck, lint, Python syntax check) | Done |
 | Price alerts system (spike, crash, viral, anomaly, new high/low) | Done |
 | KV price cache with automatic invalidation | Done |
@@ -682,7 +688,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Twitter/X sentiment integration | P2 | ~$500-1K/mo, filtered stream |
 | GameStop internal data integration (trade-ins, inventory, foot traffic) | P1 | Requires internal DB access |
 | A/B testing framework (model comparison) | P2 | Compare model versions on live traffic |
-| Model drift detection + automated alerts | P2 | Track prediction accuracy over time |
+| Model drift detection + automated alerts | P2 | Track prediction accuracy over time; use $10+ price floor filter for meaningful MDAPE |
 | CORS lockdown to GameStop domains | P0 | Currently `cors("*")` |
 | GameStop SSO for dashboard | P1 | Production auth |
 | eBay Marketplace Insights API access | P1 | Negotiate via retail partnership |
@@ -698,7 +704,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | | PriceCharting | Card Ladder (PSA) | Alt | **GameStop (v1 Shipped)** |
 |---|---|---|---|---|
 | **Data sources** | eBay + own marketplace | 14 platforms | Multiple | SoldComps + PriceCharting + PSA pop + Reddit |
-| **ML pricing** | Algorithmic smoothing (no ML) | Unknown | Likely gradient boosting | LightGBM quantile regression (batch) + statistical fallback |
+| **ML pricing** | Algorithmic smoothing (no ML) | Unknown | Likely gradient boosting | LightGBM quantile regression (707 cards, 42% MDAPE) + statistical fallback for new cards |
 | **Sentiment** | None | None | Unknown | Reddit NLP (Workers AI) |
 | **Update frequency** | Daily | Near real-time | Near real-time | Hybrid: 15-min ingestion + daily model + 15-min agent monitoring |
 | **Uncertainty** | None | None | None | Conformal prediction intervals (p10-p90) |
@@ -735,7 +741,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 
 **Deferred costs (not in v1):**
 - Twitter/X API: ~$500-1K/mo
-- ML training compute (if moved to cloud): ~$20-50/mo
+- Cloudflare Containers (ML training): ~$5-20/mo (containerized Python pipeline, on-demand)
 - GameStop internal data pipeline: $0 (internal infra)
 
 **vs. Palantir/vendor alternative:** $100K-500K+/year for a fraction of the functionality.
@@ -761,6 +767,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | **R2 model artifact corruption** | Medium | Versioned predictions in `models/versions/`; full rollback system implemented |
 | **Cron trigger overlap** | Low | Pipeline is ordered with 1-hour gaps; each stage is idempotent |
 | **CORS currently open (`*`)** | High | Must lock to GameStop domains before production |
+| **Sub-$10 card sales create misleading MDAPE metrics** | Medium | Price floor filter ($10) in monitoring; training data should also be filtered |
 
 ---
 
@@ -793,7 +800,7 @@ The `packages/ml-training` Python package provides these CLI commands:
 | `gmestart-backtest` | Walk-forward backtesting |
 | `gmestart-score` | Batch score all cards, upload predictions to R2 |
 
-**Automated retraining:** GitHub Actions workflow runs weekly (Sunday 2 AM UTC): export features from D1 -> train -> ONNX export -> batch score -> upload predictions to R2 -> Worker picks up within 10 minutes.
+**Automated retraining:** GitHub Actions workflow runs weekly (Sunday 2 AM UTC) via Cloudflare Containers: export features from D1 -> train LightGBM in containerized Python pipeline -> ONNX export -> batch score -> upload predictions to R2 -> Worker picks up within 10 minutes. No external compute required.
 
 ## Appendix C: Frontend Pages
 

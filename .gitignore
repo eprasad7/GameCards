@@ -12,7 +12,17 @@ __pycache__/
 *.onnx
 .mf/
 
+# ML training artifacts (produced by gamecards-train / gamecards-score)
+mlruns/
+models/
+batch_predictions.json
+features.csv
+training_data.csv
+*.onnx
+
 # PDF generation scripts (temp)
 docs/generate-pdf.mjs
 docs/package.json
 docs/package-lock.json
+docs/pdf-style.css
+
