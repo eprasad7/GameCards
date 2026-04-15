@@ -132,7 +132,7 @@ async function scrapeSubreddit(env: Env, subreddit: string): Promise<ScrapedPost
  */
 async function extractCardMentions(env: Env, text: string): Promise<string[]> {
   try {
-    const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+    const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
       messages: [
         {
           role: "system",

@@ -139,7 +139,7 @@ async function getRedditToken(env: Env): Promise<string | null> {
 async function extractCardMentions(env: Env, text: string): Promise<string[]> {
   try {
     // Use Workers AI text generation to extract card names
-    const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+    const result = await env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
       messages: [
         {
           role: "system",

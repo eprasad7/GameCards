@@ -35,7 +35,7 @@ export async function handleScheduled(event: ScheduledEvent, env: Env): Promise<
     "0 4 * * *": "anomaly",
     "0 5 * * *": "features",
     "0 6 * * *": "predictions",
-    "0 1 * * 0": "archive",
+    "0 1 * * SUN": "archive",
   };
 
   const source = cronSourceMap[cron];

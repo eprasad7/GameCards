@@ -68,7 +68,7 @@ Top mentioned: ${sentimentSummary.topMentioned.join(", ")}
 VOLUME: ${volumeStats.totalSales7d} sales in last 7d (${volumeStats.trend})
 `.trim();
 
-      const aiResult = await this.env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+      const aiResult = await this.env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
         messages: [
           {
             role: "system",

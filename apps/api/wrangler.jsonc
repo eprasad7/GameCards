@@ -19,7 +19,7 @@
     {
       "binding": "DB",
       "database_name": "gamecards-db",
-      "database_id": "YOUR_D1_DATABASE_ID",
+      "database_id": "d0dd386e-1d52-4c48-ae1e-14959fb0c187",
       "migrations_dir": "migrations"
     }
   ],
@@ -28,7 +28,7 @@
   "kv_namespaces": [
     {
       "binding": "PRICE_CACHE",
-      "id": "YOUR_KV_NAMESPACE_ID"
+      "id": "fd187f360e0147d6896ec855652c6a2f"
     }
   ],
 
@@ -92,7 +92,7 @@
     "crons": [
       "*/15 * * * *",
       "*/5 * * * *",
-      "0 1 * * 0",
+      "0 1 * * SUN",
       "0 * * * *",
       "0 2 * * *",
       "0 3 * * *",
