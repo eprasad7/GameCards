@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useParams, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { api, type Card } from "./lib/api";
+import { api, ApiError, type Card } from "./lib/api";
 import { SearchBar } from "./components/SearchBar";
 import { MarketOverview } from "./components/MarketOverview";
 import { CardDetail } from "./components/CardDetail";
@@ -64,25 +64,27 @@ function CardPage() {
     );
   }
 
-  if (isError) {
+  if (isError || !card) {
+    const status = error instanceof ApiError ? error.status : 0;
     const message = error instanceof Error ? error.message : "Unknown error";
-    const isAuth = message.toLowerCase().includes("unauthorized") || message.toLowerCase().includes("forbidden") || message.includes("401") || message.includes("403");
-    return (
-      <div className="py-12 text-center">
-        <p className="text-lg font-semibold text-text-primary">{isAuth ? "Authentication required" : "Failed to load card"}</p>
-        <p className="mt-1 text-sm text-text-muted">{isAuth ? "Check your API key in settings" : message}</p>
-        <button onClick={() => navigate(-1)} className="mt-4 rounded-md bg-bg-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-bg-hover min-h-[44px]">
-          Go back
-        </button>
-      </div>
-    );
-  }
 
-  if (!card) {
+    let title: string;
+    let detail: string;
+    if (status === 401 || status === 403) {
+      title = "Authentication required";
+      detail = "Check your API key in settings";
+    } else if (status === 404 || (!error && !card)) {
+      title = "Card not found";
+      detail = `The card "${cardId}" doesn\u2019t exist or has been removed`;
+    } else {
+      title = "Failed to load card";
+      detail = message;
+    }
+
     return (
       <div className="py-12 text-center">
-        <p className="text-lg font-semibold text-text-primary">Card not found</p>
-        <p className="mt-1 text-sm text-text-muted">The card &ldquo;{cardId}&rdquo; doesn&rsquo;t exist or has been removed</p>
+        <p className="text-lg font-semibold text-text-primary">{title}</p>
+        <p className="mt-1 text-sm text-text-muted">{detail}</p>
         <button onClick={() => navigate(-1)} className="mt-4 rounded-md bg-bg-secondary px-4 py-2 text-sm font-medium text-text-primary hover:bg-bg-hover min-h-[44px]">
           Go back
         </button>
