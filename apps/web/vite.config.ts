@@ -7,8 +7,13 @@ export default defineConfig({
   server: {
     proxy: {
       "/v1": {
-        target: "http://localhost:8787",
+        target: process.env.API_URL || "https://gamecards-api.servesys.workers.dev",
         changeOrigin: true,
+      },
+      "/agents": {
+        target: process.env.API_URL || "https://gamecards-api.servesys.workers.dev",
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

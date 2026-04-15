@@ -8,6 +8,7 @@ import { CardDetail } from "./components/CardDetail";
 import { EvaluateCard } from "./components/EvaluateCard";
 import { AlertsList } from "./components/AlertsList";
 import { AgentDashboard } from "./components/AgentDashboard";
+import { SignIn } from "./components/SignIn";
 import {
   LayoutDashboard,
   Search,
@@ -269,6 +270,14 @@ function AppShell() {
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(
+    () => localStorage.getItem("gamecards_authenticated") === "true"
+  );
+
+  if (!authenticated) {
+    return <SignIn onAuthenticated={() => setAuthenticated(true)} />;
+  }
+
   return (
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>

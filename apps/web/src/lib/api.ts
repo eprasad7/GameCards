@@ -1,4 +1,7 @@
-const API_BASE = "/v1";
+// In dev, Vite proxies /v1 to the Worker. In production, use the full API URL.
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/v1`
+  : "/v1";
 
 // API key injected at build time or read from localStorage for production.
 // In development (Vite proxy), auth is bypassed server-side.
