@@ -5,29 +5,47 @@ interface SignInProps {
   onAuthenticated: () => void;
 }
 
-const ACCESS_CODE = "GMESTART2026";
+// API base — same as api.ts
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL}/v1`
+  : "/v1";
 
 export function SignIn({ onAuthenticated }: SignInProps) {
   const [code, setCode] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError(false);
+    if (!code.trim()) return;
 
-    // Small delay for UX feel
-    setTimeout(() => {
-      if (code.trim().toUpperCase() === ACCESS_CODE) {
-        localStorage.setItem("gamecards_authenticated", "true");
-        localStorage.setItem("gamecards_api_key", "gamecards-demo-key-2026");
-        onAuthenticated();
-      } else {
-        setError(true);
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code.trim() }),
+      });
+
+      const data = await res.json() as { token?: string; error?: string; expiresAt?: string };
+
+      if (!res.ok || !data.token) {
+        setError(data.error || "Invalid access code");
         setLoading(false);
+        return;
       }
-    }, 400);
+
+      // Store session token (used as X-API-Key for subsequent requests)
+      localStorage.setItem("gamecards_authenticated", "true");
+      localStorage.setItem("gamecards_api_key", data.token);
+      localStorage.setItem("gamecards_session_expires", data.expiresAt || "");
+      onAuthenticated();
+    } catch {
+      setError("Unable to connect to the server");
+      setLoading(false);
+    }
   };
 
   return (
@@ -61,7 +79,7 @@ export function SignIn({ onAuthenticated }: SignInProps) {
               value={code}
               onChange={(e) => {
                 setCode(e.target.value.toUpperCase());
-                setError(false);
+                setError("");
               }}
               placeholder="ACCESS CODE"
               autoFocus
@@ -71,9 +89,7 @@ export function SignIn({ onAuthenticated }: SignInProps) {
             />
 
             {error && (
-              <p className="mt-2 text-center text-sm text-sell">
-                Invalid access code. Please try again.
-              </p>
+              <p className="mt-2 text-center text-sm text-sell">{error}</p>
             )}
 
             <button
@@ -93,7 +109,6 @@ export function SignIn({ onAuthenticated }: SignInProps) {
           </form>
         </div>
 
-        {/* Footer */}
         <p className="mt-6 text-center text-xs text-text-inverse/30">
           GameStop AI/ML Engineering &middot; Confidential
         </p>

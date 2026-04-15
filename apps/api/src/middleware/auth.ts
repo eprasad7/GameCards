@@ -3,16 +3,22 @@ import type { Env } from "../types";
 import { secureCompareStrings } from "../lib/security";
 
 /**
- * API key authentication middleware.
+ * API authentication middleware.
  *
- * Checks for X-API-Key header and validates against the API_KEY secret.
- * Exempts the health check endpoint (/) and OPTIONS preflight requests.
+ * Accepts two auth methods via X-API-Key header:
+ * 1. Static API key (for programmatic/server-to-server access)
+ * 2. Session token from /v1/auth/login (for dashboard users)
  *
- * Set the secret via: wrangler secret put API_KEY
+ * Auth routes (/v1/auth/*) are exempt — login must be accessible.
  */
 export const apiKeyAuth = createMiddleware<{ Bindings: Env }>(async (c, next) => {
-  // Skip auth for health check and CORS preflight
+  // Skip auth for health check, CORS preflight, and auth routes
   if (c.req.path === "/" || c.req.method === "OPTIONS") {
+    return next();
+  }
+
+  // Auth routes are public (login, verify)
+  if (c.req.path.startsWith("/v1/auth/")) {
     return next();
   }
 
@@ -21,29 +27,38 @@ export const apiKeyAuth = createMiddleware<{ Bindings: Env }>(async (c, next) =>
     return next();
   }
 
-  const apiKey = c.req.header("X-API-Key");
-  if (!apiKey) {
+  const token = c.req.header("X-API-Key");
+  if (!token) {
     return c.json({ error: "Missing X-API-Key header" }, 401);
   }
 
-  const isValid = await secureCompareStrings(apiKey, c.env.API_KEY);
-  if (!isValid) {
-    return c.json({ error: "Invalid API key" }, 403);
+  // Check 1: Is it the static API key? (server-to-server)
+  const isStaticKey = await secureCompareStrings(token, c.env.API_KEY);
+  if (isStaticKey) {
+    return next();
   }
 
-  return next();
+  // Check 2: Is it a valid session token? (dashboard users)
+  const session = await c.env.PRICE_CACHE.get(`session:${token}`);
+  if (session) {
+    const { expiresAt } = JSON.parse(session) as { expiresAt: number };
+    if (Date.now() <= expiresAt) {
+      return next();
+    }
+    // Expired — clean up
+    await c.env.PRICE_CACHE.delete(`session:${token}`);
+  }
+
+  return c.json({ error: "Invalid or expired credentials" }, 403);
 });
 
 /**
  * Rate limiting middleware using KV.
- *
- * Limits requests per API key to MAX_REQUESTS_PER_MINUTE.
- * Uses a sliding window counter stored in KV.
  */
 const MAX_REQUESTS_PER_MINUTE = 120;
 
 export const rateLimiter = createMiddleware<{ Bindings: Env }>(async (c, next) => {
-  if (c.req.path === "/" || c.req.method === "OPTIONS") {
+  if (c.req.path === "/" || c.req.method === "OPTIONS" || c.req.path.startsWith("/v1/auth/")) {
     return next();
   }
 
@@ -59,18 +74,11 @@ export const rateLimiter = createMiddleware<{ Bindings: Env }>(async (c, next) =
   const count = current ? parseInt(current, 10) : 0;
 
   if (count >= MAX_REQUESTS_PER_MINUTE) {
-    return c.json(
-      { error: "Rate limit exceeded. Maximum 120 requests per minute." },
-      429
-    );
+    return c.json({ error: "Rate limit exceeded. Maximum 120 requests per minute." }, 429);
   }
 
-  // Increment counter (TTL 120s to cover the full minute window + buffer)
-  await c.env.PRICE_CACHE.put(rateLimitKey, String(count + 1), {
-    expirationTtl: 120,
-  });
+  await c.env.PRICE_CACHE.put(rateLimitKey, String(count + 1), { expirationTtl: 120 });
 
-  // Set rate limit headers
   c.header("X-RateLimit-Limit", String(MAX_REQUESTS_PER_MINUTE));
   c.header("X-RateLimit-Remaining", String(MAX_REQUESTS_PER_MINUTE - count - 1));
 

@@ -30,6 +30,7 @@ export interface Env {
   REDDIT_CLIENT_SECRET: string;
   POKEMON_PRICE_TRACKER_KEY: string;
   API_KEY: string;
+  DEMO_ACCESS_CODE: string;
   SELLER_HASH_SALT?: string;
 
   // Durable Object bindings (Agents)
