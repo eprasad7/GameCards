@@ -11,3 +11,8 @@ __pycache__/
 .venv/
 *.onnx
 .mf/
+
+# PDF generation scripts (temp)
+docs/generate-pdf.mjs
+docs/package.json
+docs/package-lock.json
