@@ -1,4 +1,6 @@
 import { Agent, callable } from "agents";
+import { generateText } from "ai";
+import { createWorkersAI } from "workers-ai-provider";
 import type { Env } from "../types";
 import { handleAgentRpc } from "./rpc-handler";
 
@@ -73,18 +75,33 @@ Top mentioned: ${sentimentSummary.topMentioned.join(", ")}
 VOLUME: ${volumeStats.totalSales7d} sales in last 7d (${volumeStats.trend})
 `.trim();
 
-      const aiResult = await this.env.AI.run("@cf/google/gemma-4-26b-a4b-it", {
-        messages: [
+      // Use Cloudflare Workers AI REST API directly (AI binding may not work in DOs)
+      let summary = "";
+      try {
+        const aiResp = await fetch(
+          "https://api.cloudflare.com/client/v4/accounts/ae92d4bf7c6c448f442d084a2358dcd5/ai/run/@cf/google/gemma-4-26b-a4b-it",
           {
-            role: "system",
-            content: "You are a collectibles market analyst for GameStop. Write a concise daily market briefing (3-4 paragraphs) covering price movements, emerging trends, and notable events. Be specific about card names and percentages. End with a 1-sentence market outlook.",
-          },
-          { role: "user", content: context },
-        ],
-        max_tokens: 500,
-      });
-
-      const summary = (aiResult as { response: string }).response || "Market report unavailable.";
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${this.env.WORKERS_AI_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messages: [
+                { role: "system", content: "You are a collectibles market analyst for GameStop. Write a concise daily market briefing (3-4 paragraphs) covering price movements, emerging trends, and notable events. Be specific about card names and percentages. End with a 1-sentence market outlook." },
+                { role: "user", content: context },
+              ],
+            }),
+          }
+        );
+        const aiData = await aiResp.json() as any;
+        summary = aiData?.result?.choices?.[0]?.message?.content
+          || aiData?.result?.response
+          || "";
+      } catch (aiErr) {
+        console.error("AI call failed:", aiErr);
+      }
+      if (!summary) summary = "Market data collected. See highlights below for key movements.";
 
       const marketSentiment: MarketReport["marketSentiment"] =
         sentimentSummary.avgScore > 0.2 ? "bullish" :

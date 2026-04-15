@@ -31,6 +31,7 @@ export interface Env {
   POKEMON_PRICE_TRACKER_KEY: string;
   API_KEY: string;
   DEMO_ACCESS_CODE: string;
+  WORKERS_AI_TOKEN: string;
   SELLER_HASH_SALT?: string;
 
   // Durable Object bindings (Agents)
