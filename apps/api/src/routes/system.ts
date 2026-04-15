@@ -45,7 +45,7 @@ systemRoutes.get("/health", async (c) => {
     ).bind().all(),
     c.env.DB.prepare(`SELECT COUNT(*) as cnt FROM card_catalog`).bind().first(),
     c.env.DB.prepare(
-      `SELECT model_version, sample_size, mdape_pct, coverage_90, prediction_change_rate, drift_status, message, created_at
+      `SELECT model_version, sample_size, mdape_pct, coverage_90 as coverage_p10_p90, prediction_change_rate, drift_status, message, created_at
        FROM model_monitoring_snapshots
        ORDER BY created_at DESC
        LIMIT 1`
@@ -100,7 +100,7 @@ systemRoutes.get("/health", async (c) => {
           modelVersion: latestMonitoring.model_version,
           sampleSize: latestMonitoring.sample_size,
           mdapePct: latestMonitoring.mdape_pct,
-          coverage90: latestMonitoring.coverage_90,
+          coverageP10P90: latestMonitoring.coverage_p10_p90,
           predictionChangeRate: latestMonitoring.prediction_change_rate,
           status: latestMonitoring.drift_status,
           message: latestMonitoring.message,

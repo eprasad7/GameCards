@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { statisticalEstimation, type StatisticalPricingResult } from "../lib/pricing";
 import { recordModelMonitoringSnapshot } from "./model-monitoring";
 
 /**
@@ -13,19 +14,7 @@ import { recordModelMonitoringSnapshot } from "./model-monitoring";
  * and uploads batch_predictions.json to R2. This file is the working ML serving path.
  */
 
-interface PredictionResult {
-  fair_value: number;
-  p10: number;
-  p25: number;
-  p50: number;
-  p75: number;
-  p90: number;
-  buy_threshold: number;
-  sell_threshold: number;
-  confidence: "HIGH" | "MEDIUM" | "LOW";
-  volume_bucket: "high" | "medium" | "low";
-  model_version: string;
-}
+type PredictionResult = StatisticalPricingResult;
 
 interface BatchPrediction {
   card_id: string;
@@ -120,84 +109,6 @@ export async function predictPrice(
 
   const features = JSON.parse(featureRow.features as string);
   return statisticalEstimation(features);
-}
-
-/**
- * Statistical fallback estimation when batch predictions are unavailable.
- * Produces NRV-based buy thresholds matching the spec (Section 3.5).
- */
-function statisticalEstimation(
-  features: Record<string, number | boolean | string>
-): PredictionResult {
-  const volumeBucket = (features.volume_bucket as "high" | "medium" | "low") || "low";
-  const avgPrice30d = (features.avg_price_30d as number) || 0;
-  const avgPrice90d = (features.avg_price_90d as number) || 0;
-  const volatility = (features.price_volatility_30d as number) || 0;
-  const momentum = (features.price_momentum as number) || 1;
-
-  const basePrice = avgPrice30d > 0
-    ? avgPrice30d * 0.7 + avgPrice90d * 0.3
-    : avgPrice90d > 0
-      ? avgPrice90d
-      : 0;
-
-  if (basePrice === 0) {
-    return {
-      fair_value: 0, p10: 0, p25: 0, p50: 0, p75: 0, p90: 0,
-      buy_threshold: 0, sell_threshold: 0,
-      confidence: "LOW", volume_bucket: volumeBucket,
-      model_version: "statistical-v1",
-    };
-  }
-
-  const adjustedPrice = basePrice * (momentum > 0 ? momentum : 1);
-
-  let intervalMultiplier: number;
-  let confidence: "HIGH" | "MEDIUM" | "LOW";
-
-  switch (volumeBucket) {
-    case "high":
-      intervalMultiplier = Math.max(0.10, volatility * 1.5);
-      confidence = volatility < 0.15 ? "HIGH" : "MEDIUM";
-      break;
-    case "medium":
-      intervalMultiplier = Math.max(0.20, volatility * 2.0);
-      confidence = "MEDIUM";
-      break;
-    case "low":
-    default:
-      intervalMultiplier = Math.max(0.35, volatility * 3.0);
-      confidence = "LOW";
-      break;
-  }
-
-  const p50 = adjustedPrice;
-  const p10 = p50 * (1 - intervalMultiplier * 1.5);
-  const p25 = p50 * (1 - intervalMultiplier * 0.8);
-  const p75 = p50 * (1 + intervalMultiplier * 0.8);
-  const p90 = p50 * (1 + intervalMultiplier * 1.5);
-
-  // NRV-based buy threshold (Section 3.5)
-  const nrv = p50 * (1 - 0.13) * (1 - 0.03) - 5.00;
-  const maxBuyPrice = nrv * (1 - 0.20);
-
-  return {
-    fair_value: round2(p50),
-    p10: round2(Math.max(0, p10)),
-    p25: round2(Math.max(0, p25)),
-    p50: round2(p50),
-    p75: round2(p75),
-    p90: round2(p90),
-    buy_threshold: round2(Math.max(0, maxBuyPrice)),
-    sell_threshold: round2(p50 * (1 + intervalMultiplier)),
-    confidence,
-    volume_bucket: volumeBucket,
-    model_version: "statistical-v1",
-  };
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 /**

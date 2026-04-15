@@ -1,20 +1,14 @@
 import { Hono } from "hono";
 import type { Env, EvaluateRequest, EvaluateResponse } from "../types";
+import {
+  computeMarginPct,
+  computeMaxBuyPrice,
+  computeNrv,
+  makeTradeDecision,
+} from "../lib/pricing";
 import { buildPricingContext, optimizePrice } from "../services/pricing-optimizer";
 
 export const evaluateRoutes = new Hono<{ Bindings: Env }>();
-
-// Retail economics constants (Section 3.5 of spec)
-const MARKETPLACE_FEE_PCT = 0.13;
-const SHIPPING_COST = 5.0;
-const RETURN_RATE = 0.03;
-const REQUIRED_MARGIN = 0.20;
-
-function computeNrv(fairValue: number): number {
-  const gross = fairValue * (1 - MARKETPLACE_FEE_PCT);
-  const netAfterReturns = gross * (1 - RETURN_RATE);
-  return netAfterReturns - SHIPPING_COST;
-}
 
 interface EvaluatedCard extends EvaluateResponse {
   card_id: string;
@@ -75,10 +69,8 @@ async function evaluateCard(env: Env, body: EvaluateRequest): Promise<EvaluatedC
 
     const avgPrice = recentSales.avg_price as number;
     const nrv = computeNrv(avgPrice);
-    const maxBuyPrice = nrv * (1 - REQUIRED_MARGIN);
-    const nrvMargin = offered_price < nrv
-      ? ((nrv - offered_price) / nrv) * 100
-      : ((offered_price - nrv) / nrv) * -100;
+    const maxBuyPrice = computeMaxBuyPrice(avgPrice);
+    const nrvMargin = computeMarginPct(offered_price, nrv);
 
     return {
       card_id,
@@ -103,31 +95,22 @@ async function evaluateCard(env: Env, body: EvaluateRequest): Promise<EvaluatedC
   const volumeBucket = prediction.volume_bucket as string;
 
   const nrv = computeNrv(fairValue);
-  const maxBuyPrice = nrv * (1 - REQUIRED_MARGIN);
-  const nrvMargin = offered_price < nrv
-    ? ((nrv - offered_price) / nrv) * 100
-    : ((offered_price - nrv) / nrv) * -100;
+  const maxBuyPrice = computeMaxBuyPrice(fairValue);
+  const nrvMargin = computeMarginPct(offered_price, nrv);
 
-  let decision: EvaluateResponse["decision"];
+  const decision = makeTradeDecision(offered_price, fairValue, sellThreshold, confidence);
   let reasoning: string;
 
-  if (offered_price < maxBuyPrice) {
-    if (confidence !== "LOW") {
-      decision = "STRONG_BUY";
-      reasoning = `Price $${offered_price.toFixed(2)} is below max buy price $${maxBuyPrice.toFixed(2)} (NRV: $${nrv.toFixed(2)}, fair value: $${fairValue.toFixed(2)}). Expected ${nrvMargin.toFixed(1)}% net margin. ${confidence} confidence, ${volumeBucket} volume.`;
-    } else {
-      decision = "REVIEW_BUY";
-      reasoning = `Price below max buy price but LOW confidence (${volumeBucket} volume). NRV: $${nrv.toFixed(2)}, max buy: $${maxBuyPrice.toFixed(2)}. Human review recommended.`;
-    }
-  } else if (offered_price > sellThreshold) {
-    decision = "SELL_SIGNAL";
+  if (decision === "STRONG_BUY") {
+    reasoning = `Price $${offered_price.toFixed(2)} is below max buy price $${maxBuyPrice.toFixed(2)} (NRV: $${nrv.toFixed(2)}, fair value: $${fairValue.toFixed(2)}). Expected ${nrvMargin.toFixed(1)}% net margin. ${confidence} confidence, ${volumeBucket} volume.`;
+  } else if (decision === "REVIEW_BUY") {
+    reasoning = `Price below max buy price but LOW confidence (${volumeBucket} volume). NRV: $${nrv.toFixed(2)}, max buy: $${maxBuyPrice.toFixed(2)}. Human review recommended.`;
+  } else if (decision === "SELL_SIGNAL") {
     reasoning = `Price $${offered_price.toFixed(2)} exceeds sell threshold $${sellThreshold.toFixed(2)}. Consider selling. NRV at fair value: $${nrv.toFixed(2)}.`;
   } else if (offered_price > nrv) {
-    decision = "FAIR_VALUE";
-    reasoning = `Price $${offered_price.toFixed(2)} exceeds NRV $${nrv.toFixed(2)} — buying would not meet ${REQUIRED_MARGIN * 100}% margin target.`;
+    reasoning = `Price $${offered_price.toFixed(2)} exceeds NRV $${nrv.toFixed(2)} — buying would not meet 20% margin target.`;
   } else {
-    decision = "FAIR_VALUE";
-    reasoning = `Price $${offered_price.toFixed(2)} is between max buy $${maxBuyPrice.toFixed(2)} and NRV $${nrv.toFixed(2)}. Margin of ${nrvMargin.toFixed(1)}% is below ${REQUIRED_MARGIN * 100}% target.`;
+    reasoning = `Price $${offered_price.toFixed(2)} is between max buy $${maxBuyPrice.toFixed(2)} and NRV $${nrv.toFixed(2)}. Margin of ${nrvMargin.toFixed(1)}% is below 20% target.`;
   }
 
   return {

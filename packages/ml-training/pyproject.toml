@@ -32,6 +32,11 @@ gamecards-export = "gamecards_ml.export_onnx:cli"
 gamecards-score = "gamecards_ml.batch_score:cli"
 gamecards-export-features = "gamecards_ml.export_features:cli"
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

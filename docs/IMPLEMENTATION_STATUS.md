@@ -69,7 +69,7 @@ The core data pipeline (ingestion, anomaly detection, feature computation, predi
 | Daily price aggregates       | Implemented           | `services/aggregates.ts`  | Median approximated as mean (SQLite has no PERCENTILE_CONT) |
 | Weekly aggregates            | Implemented           | `services/aggregates.ts`  | Runs on Mondays |
 | Monthly aggregates           | Implemented           | `services/aggregates.ts`  | Runs on 1st of month |
-| Feature store payload        | Implemented           | `services/features.ts`    | 26 stored fields, 22 current model inputs |
+| Feature store payload        | Implemented           | `services/features.ts`    | `feature_store` for serving + daily `feature_store_history` snapshots for PIT training |
 | `pop_growth_rate_90d`        | Stubbed               | `services/features.ts:199`| Returns 0 — needs historical population comparison |
 | `social_mention_trend`       | Stubbed               | `services/features.ts:213`| Returns 0 — needs 7d/30d mention ratio |
 | Sentiment hourly rollup      | Implemented           | `services/sentiment-rollup.ts` | 24h/7d/30d periods, engagement-weighted, prunes raw data >35d |
@@ -89,15 +89,15 @@ The core data pipeline (ingestion, anomaly detection, feature computation, predi
 | Component                        | Status      | File                           | Notes |
 |----------------------------------|-------------|--------------------------------|-------|
 | LightGBM quantile training       | Implemented | `train.py`                     | 7 quantile models, walk-forward split |
-| Walk-forward backtesting         | Implemented | `backtest.py`                  | Stratified by volume bucket, simulated P&L |
+| Walk-forward backtesting         | Implemented | `backtest.py`                  | Stratified by volume bucket, CLI quality gate for MdAPE / p10-p90 coverage |
 | ONNX export                      | Implemented | `export_onnx.py`               | Per-quantile ONNX files + metadata JSON |
 | R2 upload                        | Implemented | `export_onnx.py`               | boto3 S3-compatible upload |
 | MLflow integration               | Implemented | `train.py`                     | Logs params, metrics, iterations |
-| Conformal calibration            | Partially implemented | `conformal.py` + `train.py` | In repo and used during evaluation, but correction is not auto-persisted into scoring |
+| Conformal calibration            | Implemented | `conformal.py` + `train.py` | Correction is persisted in `model_meta.json` and auto-loaded by `batch_score.py` |
 | Batch scoring to R2              | Implemented | `batch_score.py`               | Writes `batch_predictions.json` for Worker serving |
-| Training data export from D1     | Implemented | `export_features.py`           | Queries D1 via Cloudflare REST API, exports features.csv + training_data.csv |
+| Training data export from D1     | Implemented | `export_features.py`           | Queries D1 via Cloudflare REST API, joins each sale to latest `feature_store_history` snapshot on or before sale date |
 | End-to-end pipeline script       | Implemented | `scripts/run_pipeline.sh`      | train → ONNX export → batch score → R2 upload in one command |
-| Automated retraining schedule    | Not started |                                | Pipeline script exists but must be triggered manually (no cron/CI) |
+| Automated retraining schedule    | Implemented | `.github/workflows/retrain.yml` | Weekly export → train → walk-forward backtest gate → score → upload |
 
 ## Anomaly Detection
 
@@ -143,8 +143,8 @@ The core data pipeline (ingestion, anomaly detection, feature computation, predi
 | Wrangler config (all bindings)     | Implemented  | `wrangler.jsonc` — needs real IDs before deploy |
 | Cron trigger routing               | Implemented  | All 8 crons routed in `scheduler.ts` |
 | Ingestion logging                  | Implemented  | `ingestion_log` table, started/completed/failed |
-| CI pipeline (GitHub Actions)       | Implemented  | `.github/workflows/ci.yml` — typecheck API + web, run Vitest tests, Python syntax check |
-| API tests (Vitest)                 | Implemented  | `apps/api/test/` — 5 test files: auth, dedup, NRV, params, scheduler |
+| CI pipeline (GitHub Actions)       | Implemented  | `.github/workflows/ci.yml` — typecheck API + web, run Vitest tests, Python syntax + pytest suite |
+| API tests (Vitest)                 | Implemented  | `apps/api/test/` — shared pricing logic, inference, auth, dedup, NRV, params, scheduler |
 | System routes (health/model/rollback/bootstrap) | Implemented | `src/routes/system.ts` — pipeline health, model metadata, prediction rollback, catalog bootstrap |
 | Card catalog bootstrap             | Implemented  | `src/services/ingestion/bootstrap.ts` — PriceCharting CSV from R2 → card_catalog |
 | Production environment config      | Implemented  | `wrangler.jsonc` — `--env production` with custom domain routing, `deploy:prod` script |

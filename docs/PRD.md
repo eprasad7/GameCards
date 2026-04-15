@@ -70,12 +70,14 @@ Customer arrives with card
 
 | Metric                           | Target        | Measurement                              |
 |----------------------------------|---------------|------------------------------------------|
-| Median Absolute % Error (MdAPE)  | < 15% (high-vol), < 25% (mid), < 40% (low) | Walk-forward backtest, stratified by volume. Current: ~42% overall (point-in-time feature gap noted). |
-| p10-p90 interval coverage        | > 75%         | Actual prices within p10-p90 bands (80% nominal interval, not 90%). Current: ~91%. |
+| Median Absolute % Error (MdAPE)  | < 15% (high-vol), < 25% (mid), < 40% (low) | Walk-forward backtest on point-in-time snapshots, stratified by volume. MVP gate: overall MdAPE <= 45% while snapshot history is still accumulating. |
+| p10-p90 interval coverage        | > 75%         | Actual prices within p10-p90 bands (80% nominal interval, not 90%). |
 | Evaluation latency (p95)         | < 200ms       | API response time for `/v1/evaluate`      |
 | Data freshness                   | < 1 hour      | Time since last ingestion for active cards |
 | Alert precision                  | > 80%         | % of alerts that analysts consider actionable |
 | Buy decision accuracy            | > 70%         | % of STRONG_BUY cards that sell above buy price + margin target |
+
+Offline simulated P&L is informational only until the system has a separate held-out offer stream for backtesting trade-in decisions.
 
 ## Acceptance Criteria
 

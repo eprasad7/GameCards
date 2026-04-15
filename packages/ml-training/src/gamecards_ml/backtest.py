@@ -4,8 +4,8 @@ Walk-forward backtesting for the pricing model.
 Implements the evaluation framework from the spec:
 - Walk-forward validation (train on past, test on future)
 - Metrics stratified by volume bucket
-- MdAPE, Coverage, Interval Width, Directional Accuracy
-- Simulated trading P&L
+- MdAPE, p10-p90 coverage, interval width, rank-aware quality signals
+- Informational simulated trading P&L
 """
 
 import json
@@ -79,7 +79,7 @@ def walk_forward_backtest(
         y_pred = predictions[0.50]
         abs_pct_errors = np.abs(y_actual - y_pred) / np.maximum(y_actual, 1e-8)
 
-        # Coverage
+        # Coverage of the p10-p90 interval (80% nominal interval)
         lower = predictions[0.10]
         upper = predictions[0.90]
         coverage = float(np.mean((y_actual >= lower) & (y_actual <= upper)) * 100)
@@ -105,7 +105,7 @@ def walk_forward_backtest(
                 )
                 fold_result[f"count_{bucket}"] = int(mask.sum())
 
-        # Simulated trading P&L
+        # Informational only until we have a separate offer stream.
         buy_threshold = predictions[0.20]
         sell_threshold = predictions[0.80]
         pnl = simulate_trading(y_actual, y_pred, buy_threshold, sell_threshold)
@@ -128,7 +128,7 @@ def simulate_trading(
     sell_threshold: np.ndarray,
 ) -> float:
     """
-    Simulate GameStop's trade-in pricing policy.
+    Informational proxy for GameStop's trade-in pricing policy.
 
     Scenario: a customer walks in with a card. The actual market price
     (from a recent comparable sale) is the "offered price". The model's
@@ -138,8 +138,9 @@ def simulate_trading(
       if actual_market_price < buy_threshold → BUY (profit = predicted - actual)
       if actual_market_price > sell_threshold → SELL (profit = actual - predicted)
 
-    This uses `actual` as the offered/market price (observable at decision time
-    from recent comps) and `predicted` as our fair value estimate.
+    This still conditions decisions on the held-out target as a proxy for the
+    offer stream, so it is useful for directional sanity checks only and should
+    not be reported as an unbiased production P&L simulation.
     """
     total_pnl = 0.0
     for i in range(len(actual)):
@@ -152,10 +153,60 @@ def simulate_trading(
     return float(total_pnl)
 
 
+def summarize_backtest(results: list[dict]) -> dict:
+    """Aggregate fold results into a compact summary."""
+    avg_mdape = np.mean([r["mdape"] for r in results])
+    avg_coverage = np.mean([r["coverage_p10_p90"] for r in results])
+    total_pnl = sum(r["simulated_pnl"] for r in results)
+
+    return {
+        "folds": len(results),
+        "avg_mdape": round(float(avg_mdape), 2),
+        "avg_coverage_p10_p90": round(float(avg_coverage), 2),
+        "total_simulated_pnl": round(float(total_pnl), 2),
+        "fold_results": results,
+    }
+
+
+def validate_backtest_summary(
+    summary: dict,
+    max_mdape: float | None = None,
+    min_coverage_p10_p90: float | None = None,
+    min_folds: int = 1,
+) -> list[str]:
+    """Return human-readable quality gate failures."""
+    failures: list[str] = []
+
+    folds = int(summary.get("folds", 0))
+    if folds < min_folds:
+        failures.append(f"fold count {folds} below minimum {min_folds}")
+
+    avg_mdape = float(summary.get("avg_mdape", 0))
+    if max_mdape is not None and avg_mdape > max_mdape:
+        failures.append(f"avg_mdape {avg_mdape:.2f} exceeds maximum {max_mdape:.2f}")
+
+    avg_coverage = float(summary.get("avg_coverage_p10_p90", 0))
+    if min_coverage_p10_p90 is not None and avg_coverage < min_coverage_p10_p90:
+        failures.append(
+            f"avg_coverage_p10_p90 {avg_coverage:.2f} below minimum {min_coverage_p10_p90:.2f}"
+        )
+
+    return failures
+
+
 @click.command()
 @click.option("--data", required=True, help="Path to training data CSV")
 @click.option("--output", default="backtest_results.json", help="Output file for results")
-def cli(data: str, output: str):
+@click.option("--max-mdape", type=float, default=None, help="Fail if avg MdAPE exceeds this threshold")
+@click.option("--min-coverage-p10-p90", type=float, default=None, help="Fail if avg p10-p90 coverage drops below this threshold")
+@click.option("--min-folds", type=int, default=1, show_default=True, help="Minimum required walk-forward folds")
+def cli(
+    data: str,
+    output: str,
+    max_mdape: float | None,
+    min_coverage_p10_p90: float | None,
+    min_folds: int,
+):
     """Run walk-forward backtesting."""
     logging.basicConfig(level=logging.INFO)
 
@@ -164,27 +215,28 @@ def cli(data: str, output: str):
     results = walk_forward_backtest(df, config)
 
     if results:
-        # Summary
-        avg_mdape = np.mean([r["mdape"] for r in results])
-        avg_coverage = np.mean([r["coverage_p10_p90"] for r in results])
-        total_pnl = sum(r["simulated_pnl"] for r in results)
-
-        summary = {
-            "folds": len(results),
-            "avg_mdape": round(avg_mdape, 2),
-            "avg_coverage_p10_p90": round(avg_coverage, 2),
-            "total_simulated_pnl": round(total_pnl, 2),
-            "fold_results": results,
-        }
+        summary = summarize_backtest(results)
 
         Path(output).write_text(json.dumps(summary, indent=2))
         logger.info(f"\nBacktest Summary ({len(results)} folds):")
-        logger.info(f"  Avg MdAPE: {avg_mdape:.1f}%")
-        logger.info(f"  Avg Coverage (p10-p90): {avg_coverage:.1f}%")
-        logger.info(f"  Total Simulated P&L: ${total_pnl:.2f}")
+        logger.info(f"  Avg MdAPE: {summary['avg_mdape']:.1f}%")
+        logger.info(f"  Avg Coverage (p10-p90): {summary['avg_coverage_p10_p90']:.1f}%")
+        logger.info(f"  Total Simulated P&L: ${summary['total_simulated_pnl']:.2f}")
         logger.info(f"  Results saved to {output}")
+
+        failures = validate_backtest_summary(
+            summary,
+            max_mdape=max_mdape,
+            min_coverage_p10_p90=min_coverage_p10_p90,
+            min_folds=min_folds,
+        )
+        if failures:
+            for failure in failures:
+                logger.error(f"QUALITY GATE FAILED: {failure}")
+            raise SystemExit(1)
     else:
         logger.error("No backtest results generated")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

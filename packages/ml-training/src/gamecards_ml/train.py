@@ -14,7 +14,6 @@ import lightgbm as lgb
 import mlflow
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import TimeSeriesSplit
 
 from .config import TrainingConfig
 
@@ -39,14 +38,8 @@ def load_training_data(data_path: str) -> pd.DataFrame:
     # Log-transform target (prices are log-normal)
     df["log_price"] = np.log1p(df["price_usd"])
 
-    # Classify volume buckets
-    quarterly_sales = df.groupby(["card_id", "grading_company", "grade"]).size()
-    df["volume_bucket"] = df.apply(
-        lambda row: classify_volume(
-            quarterly_sales.get((row["card_id"], row["grading_company"], row["grade"]), 0)
-        ),
-        axis=1,
-    )
+    # Classify volume buckets using only sales available as of each row's sale date.
+    df["volume_bucket"] = assign_asof_volume_buckets(df)
 
     logger.info(
         f"Loaded {len(df)} observations, "
@@ -62,6 +55,28 @@ def classify_volume(count: int) -> str:
     elif count >= 10:
         return "medium"
     return "low"
+
+
+def assign_asof_volume_buckets(df: pd.DataFrame) -> pd.Series:
+    """Classify each sale using trailing 90-day volume available at that date."""
+    if df.empty:
+        return pd.Series(dtype="object")
+
+    group_cols = ["card_id", "grading_company", "grade"]
+    sorted_df = df.sort_values(group_cols + ["sale_date"]).copy()
+    buckets = pd.Series(index=sorted_df.index, dtype="object")
+
+    for _, group in sorted_df.groupby(group_cols, sort=False):
+        rolling_counts = (
+            group.set_index("sale_date")["price_usd"]
+            .rolling("90D")
+            .count()
+        )
+        buckets.loc[group.index] = [
+            classify_volume(int(count)) for count in rolling_counts.to_list()
+        ]
+
+    return buckets.reindex(df.index).fillna("low")
 
 
 def train_quantile_models(

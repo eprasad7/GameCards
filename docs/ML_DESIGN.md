@@ -31,7 +31,9 @@ Standard time series approaches (ARIMA, Prophet, etc.) assume regular observatio
 
 ## Feature Store Payload
 
-Computed daily in `services/features.ts` and stored as a JSON blob in `feature_store`.
+Computed daily in `services/features.ts` and stored as JSON in two places:
+- `feature_store` keeps the latest snapshot for runtime serving.
+- `feature_store_history` keeps one daily snapshot per card+grade+company for point-in-time training/export.
 
 The `feature_store` row contains a broader operational payload than the model consumes:
 - **26 stored fields** for routing, inspection, and downstream heuristics.
@@ -195,14 +197,14 @@ All metrics are computed during walk-forward backtesting, stratified by volume b
 
 | Metric                     | Description                                         | Target |
 |----------------------------|-----------------------------------------------------|--------|
-| MdAPE (overall)            | Median Absolute Percentage Error of p50 predictions | < 15% (aspirational), < 45% (current gate) |
+| MdAPE (overall)            | Median Absolute Percentage Error of p50 predictions | < 15% (aspirational), < 45% (current walk-forward gate) |
 | MdAPE (high volume)        | MdAPE for cards with 90d sales >= 50                | < 10%  |
 | MdAPE (medium volume)      | MdAPE for cards with 90d sales 10-49                | < 15%  |
 | MdAPE (low volume)         | MdAPE for cards with 90d sales < 10                 | < 25%  |
 | Coverage (p10-p90)         | % of actuals within p10-p90 interval (80% nominal)  | > 75%  |
 | Interval width             | Average (p90 - p10) / p50 as percentage             | Minimize while maintaining coverage |
 | Rank correlation           | Pearson correlation between predicted and actual prices | > 0.7 |
-| Simulated P&L              | Trading profits (note: uses target as offer, see Section 6.4 of spec) | > $0 |
+| Simulated P&L              | Informational only. Uses held-out sale price as offer proxy, so it is not a clean production-policy simulation. | > $0 |
 
 ## Known Limitations
 
@@ -214,6 +216,6 @@ All metrics are computed during walk-forward backtesting, stratified by volume b
 
 4. **Population growth rate is stubbed.** `pop_growth_rate_90d` returns 0 because it requires comparing population snapshots 90 days apart — the system needs 90+ days of population data before this feature becomes active.
 
-5. **Conformal calibration exists, but artifact handoff is manual.** `conformal.py` is in the repo and training computes conformal metrics, but the correction is not automatically persisted from training into `batch_score.py`. The scorer accepts `--conformal-correction`, so production use still depends on an external handoff step.
+5. **Point-in-time snapshot history must accumulate before full retraining coverage is available.** The repo now stores daily `feature_store_history` snapshots and training exports only rows with a snapshot on or before the sale date. This fixes lookahead leakage, but historical rows that predate snapshot collection are excluded until enough history accumulates.
 
 6. **Best-offer bias.** Accepted best-offer prices are adjusted to 80% of listed price (per spec section 5.2), but the true acceptance rate varies by card and seller. This introduces systematic noise.

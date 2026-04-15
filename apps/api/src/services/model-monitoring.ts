@@ -11,7 +11,7 @@ export interface ModelMonitoringSnapshot {
   model_version: string;
   sample_size: number;
   mdape_pct: number | null;
-  coverage_90: number | null;
+  coverage_p10_p90: number | null;
   prediction_change_rate: number;
   drift_status: "healthy" | "warning" | "degraded";
   message: string;
@@ -19,14 +19,14 @@ export interface ModelMonitoringSnapshot {
 
 function classifyDrift(
   mdapePct: number | null,
-  coverage90: number | null,
+  coverageP10P90: number | null,
   changeRate: number
 ): ModelMonitoringSnapshot["drift_status"] {
   // Statistical fallback (no trained ML model) naturally has high MDAPE.
   // Only flag degraded for truly broken states — a trained model would
   // have much tighter thresholds (e.g., 35% degraded, 20% warning).
   if (
-    (coverage90 !== null && coverage90 < 0.3) ||
+    (coverageP10P90 !== null && coverageP10P90 < 0.3) ||
     changeRate > 0.8
   ) {
     return "degraded";
@@ -34,7 +34,7 @@ function classifyDrift(
 
   if (
     (mdapePct !== null && mdapePct > 500) ||
-    (coverage90 !== null && coverage90 < 0.6) ||
+    (coverageP10P90 !== null && coverageP10P90 < 0.6) ||
     changeRate > 0.5
   ) {
     return "warning";
@@ -75,15 +75,15 @@ export async function recordModelMonitoringSnapshot(
 
   const sampleSize = (metrics?.sample_size as number) || 0;
   const mdapePct = metrics?.mdape != null ? Math.round((metrics.mdape as number) * 1000) / 10 : null;
-  const coverage90 = metrics?.coverage_90 != null ? Math.round((metrics.coverage_90 as number) * 1000) / 1000 : null;
+  const coverageP10P90 = metrics?.coverage_90 != null ? Math.round((metrics.coverage_90 as number) * 1000) / 1000 : null;
   const predictionChangeRate =
     summary.comparedCount > 0 ? Math.round((summary.changedCount / summary.comparedCount) * 1000) / 1000 : 0;
-  const driftStatus = classifyDrift(mdapePct, coverage90, predictionChangeRate);
+  const driftStatus = classifyDrift(mdapePct, coverageP10P90, predictionChangeRate);
 
   const message =
     sampleSize === 0
       ? "No recent realized sales to score drift."
-      : `MAPE(trimmed) ${mdapePct ?? "n/a"}%, p10-p90 coverage ${coverage90 ?? "n/a"}, prediction change rate ${Math.round(
+      : `MAPE(trimmed) ${mdapePct ?? "n/a"}%, p10-p90 coverage ${coverageP10P90 ?? "n/a"}, prediction change rate ${Math.round(
           predictionChangeRate * 100
         )}%. (sales >= $10, top 5% errors excluded)`;
 
@@ -96,7 +96,7 @@ export async function recordModelMonitoringSnapshot(
       summary.modelVersion,
       sampleSize,
       mdapePct,
-      coverage90,
+      coverageP10P90,
       predictionChangeRate,
       driftStatus,
       message
@@ -115,7 +115,7 @@ export async function recordModelMonitoringSnapshot(
     modelVersion: summary.modelVersion,
     sampleSize,
     mdapePct,
-    coverage90,
+    coverageP10P90,
     predictionChangeRate,
     driftStatus,
   });
@@ -124,7 +124,7 @@ export async function recordModelMonitoringSnapshot(
     model_version: summary.modelVersion,
     sample_size: sampleSize,
     mdape_pct: mdapePct,
-    coverage_90: coverage90,
+    coverage_p10_p90: coverageP10P90,
     prediction_change_rate: predictionChangeRate,
     drift_status: driftStatus,
     message,

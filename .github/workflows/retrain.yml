@@ -59,6 +59,20 @@ jobs:
             --data training_data.csv \
             --output models/
 
+      - name: Walk-forward backtest quality gate
+        if: ${{ github.event.inputs.skip_quality_gate != 'true' }}
+        run: |
+          gmestart-backtest \
+            --data training_data.csv \
+            --output backtest_results.json \
+            --max-mdape 45 \
+            --min-coverage-p10-p90 75 \
+            --min-folds 1
+
+      - name: Skip backtest quality gate
+        if: ${{ github.event.inputs.skip_quality_gate == 'true' }}
+        run: echo "Skipping walk-forward quality gate via workflow input."
+
       - name: Export to ONNX
         run: |
           gmestart-export \
@@ -95,6 +109,7 @@ jobs:
           name: training-artifacts
           path: |
             models/model_meta.json
+            backtest_results.json
             batch_predictions.json
           retention-days: 30
 
@@ -106,5 +121,10 @@ jobs:
           echo "- Cards scored: $(python3 -c 'import json; print(len(json.load(open("batch_predictions.json"))))')" >> $GITHUB_STEP_SUMMARY
           echo "- Model version: $(python3 -c 'import json; print(json.load(open("models/model_meta.json"))["version"])')" >> $GITHUB_STEP_SUMMARY
           echo "- Conformal correction: $(python3 -c 'import json; print(json.load(open("models/model_meta.json")).get("conformal_correction", 0))')" >> $GITHUB_STEP_SUMMARY
+          if [ -f backtest_results.json ]; then
+            echo "- Walk-forward MdAPE: $(python3 -c 'import json; print(json.load(open("backtest_results.json"))["avg_mdape"])')%" >> $GITHUB_STEP_SUMMARY
+            echo "- Walk-forward p10-p90 coverage: $(python3 -c 'import json; print(json.load(open("backtest_results.json"))["avg_coverage_p10_p90"])')%" >> $GITHUB_STEP_SUMMARY
+            echo "- Backtest folds: $(python3 -c 'import json; print(json.load(open("backtest_results.json"))["folds"])')" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Predictions uploaded to R2. Worker will pick them up within 10 minutes." >> $GITHUB_STEP_SUMMARY

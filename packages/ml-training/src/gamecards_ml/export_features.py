@@ -25,6 +25,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 D1_API_BASE = "https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{database_id}/query"
+TRAINING_MIN_PRICE_USD = 10.0
 
 
 def query_d1(account_id: str, database_id: str, api_token: str, sql: str, params: list | None = None) -> list[dict]:
@@ -92,31 +93,39 @@ def export_features(account_id: str, database_id: str, api_token: str, output_pa
     return len(flat_rows)
 
 
+def training_export_sql(min_price_usd: float = TRAINING_MIN_PRICE_USD) -> str:
+    """SQL for point-in-time training export."""
+    return f"""SELECT po.card_id, po.grade, po.grading_company, po.price_usd, po.sale_date,
+                  fsh.features
+           FROM price_observations po
+           INNER JOIN feature_store_history fsh
+             ON fsh.card_id = po.card_id
+             AND fsh.grade = COALESCE(po.grade, 'RAW')
+             AND fsh.grading_company = COALESCE(po.grading_company, 'RAW')
+             AND fsh.snapshot_date = (
+               SELECT MAX(snapshot_date)
+               FROM feature_store_history fsh2
+               WHERE fsh2.card_id = po.card_id
+                 AND fsh2.grade = COALESCE(po.grade, 'RAW')
+                 AND fsh2.grading_company = COALESCE(po.grading_company, 'RAW')
+                 AND fsh2.snapshot_date <= date(po.sale_date)
+             )
+           WHERE po.is_anomaly = 0
+             AND po.grade IS NOT NULL
+             AND po.price_usd >= {min_price_usd}
+           ORDER BY po.sale_date"""
+
+
 def export_training_data(account_id: str, database_id: str, api_token: str, output_path: str) -> int:
     """Export price_observations joined with features for model training.
 
-    NOTE ON POINT-IN-TIME FEATURES:
-    feature_store contains only the latest snapshot per card (ON CONFLICT DO UPDATE).
-    This means all sales — past and present — are joined to the same current features.
-    This introduces mild lookahead bias for features like sales_count_7d and momentum,
-    but not for stable features like grade, population, and seasonality (~70% of signal).
-
-    Proper fix: store daily feature snapshots and join each sale to the features
-    as of that sale date. Deferred until data volume justifies the storage cost.
+    Exports only rows that have a feature snapshot on or before the sale date.
+    This keeps the training set point-in-time correct at the cost of dropping
+    rows that predate the snapshot history.
     """
     rows = query_d1(
         account_id, database_id, api_token,
-        """SELECT po.card_id, po.grade, po.grading_company, po.price_usd, po.sale_date,
-                  fs.features
-           FROM price_observations po
-           INNER JOIN feature_store fs
-             ON fs.card_id = po.card_id
-             AND fs.grade = COALESCE(po.grade, 'RAW')
-             AND fs.grading_company = COALESCE(po.grading_company, 'RAW')
-           WHERE po.is_anomaly = 0
-             AND po.grade IS NOT NULL
-             AND po.price_usd >= 10
-           ORDER BY po.sale_date"""
+        training_export_sql()
     )
 
     if not rows:
