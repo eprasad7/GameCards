@@ -8,7 +8,6 @@ import {
   Globe,
   Cpu,
   ArrowDown,
-  ArrowRight,
   Layers,
   Brain,
   AlertTriangle,
@@ -48,41 +47,36 @@ export function Architecture() {
           </div>
         </div>
 
-        {/* Row 2: Processing pipeline */}
-        <div className="max-w-5xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-0">
-            <PipelineBlock
-              number="1"
-              title="Anomaly Detection"
-              icon={<AlertTriangle className="h-5 w-5" />}
-              color="bg-sell/10 border-sell/20 text-sell"
-              items={["IQR outlier flagging", "Seller concentration", "Best Offer 0.80x discount", "Lot/bundle filtering"]}
-            />
-            <PipelineArrowH />
-            <PipelineBlock
-              number="2"
-              title="Feature Engineering"
-              icon={<Cpu className="h-5 w-5" />}
-              color="bg-hold/10 border-hold/20 text-hold"
-              items={["22 features per card", "Grade + population", "Price momentum", "Social sentiment"]}
-            />
-            <PipelineArrowH />
-            <PipelineBlock
-              number="3"
-              title="ML Prediction"
-              icon={<Brain className="h-5 w-5" />}
-              color="bg-buy/10 border-buy/20 text-buy"
-              items={["7 quantile models", "Confidence intervals", "NRV buy thresholds", "Volume-aware routing"]}
-            />
-            <PipelineArrowH />
-            <PipelineBlock
-              number="4"
-              title="Serving"
-              icon={<Zap className="h-5 w-5" />}
-              color="bg-info/10 border-info/20 text-info"
-              items={["<5ms edge lookups", "KV price cache", "Real-time evaluate", "Dashboard + API"]}
-            />
-          </div>
+        {/* Row 2: Processing pipeline — simple 4-col grid */}
+        <div className="max-w-5xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <PipelineBlock
+            number="1"
+            title="Anomaly Detection"
+            icon={<AlertTriangle className="h-5 w-5" />}
+            color="bg-sell/10 border-sell/20 text-sell"
+            items={["IQR outlier flagging", "Seller concentration", "Best Offer 0.80x discount", "Lot/bundle filtering"]}
+          />
+          <PipelineBlock
+            number="2"
+            title="Feature Engineering"
+            icon={<Cpu className="h-5 w-5" />}
+            color="bg-hold/10 border-hold/20 text-hold"
+            items={["22 features per card", "Grade + population", "Price momentum", "Social sentiment"]}
+          />
+          <PipelineBlock
+            number="3"
+            title="ML Prediction"
+            icon={<Brain className="h-5 w-5" />}
+            color="bg-buy/10 border-buy/20 text-buy"
+            items={["7 quantile models", "Confidence intervals", "NRV buy thresholds", "Volume-aware routing"]}
+          />
+          <PipelineBlock
+            number="4"
+            title="Serving"
+            icon={<Zap className="h-5 w-5" />}
+            color="bg-info/10 border-info/20 text-info"
+            items={["<5ms edge lookups", "KV price cache", "Real-time evaluate", "Dashboard + API"]}
+          />
         </div>
 
         {/* Stats bar */}
@@ -287,14 +281,6 @@ function PipelineBlock({ number, title, icon, color, items }: { number: string; 
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function PipelineArrowH() {
-  return (
-    <div className="hidden md:flex items-center justify-center px-1">
-      <ArrowRight className="h-5 w-5 text-text-muted" />
     </div>
   );
 }
