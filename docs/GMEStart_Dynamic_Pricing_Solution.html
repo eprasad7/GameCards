@@ -1024,11 +1024,37 @@ volume bucket.</strong></p>
 <h3 id="monitoring-price-floor">6.3 Monitoring Price Floor</h3>
 <p>Sub-$10 sales (accessories, commons, mismatches) create astronomical
 percentage errors that don’t reflect model quality. A $2 card predicted
-at $4 is a 100% error but only $2 off — not a real pricing failure.
-MDAPE computed on $10+ sales is <strong>42% with 91.5%
-coverage</strong>. All production monitoring dashboards apply a $10
-price floor filter. Training data should also be filtered to exclude
-sub-$10 noise.</p>
+at $4 is a 100% error but only $2 off — not a real pricing failure. MAPE
+(trimmed) computed on $10+ sales is <strong>42% with p10-p90 coverage of
+91%</strong>. All production monitoring dashboards apply a $10 price
+floor filter.</p>
+<h3 id="known-ml-evaluation-limitations">6.4 Known ML Evaluation
+Limitations</h3>
+<p>Two structural limitations affect offline evaluation quality:</p>
+<p><strong>1. Point-in-time feature leakage.</strong>
+<code>feature_store</code> contains only the latest snapshot per card
+(one row, updated in place). When exporting training data, all
+historical sales are joined to today’s features — meaning a 2023 sale
+gets 2026 velocity, momentum, and seasonality values. This overstates
+model accuracy for temporal features (~30% of signal weight). Static
+features (grade, population, card identity — ~70% of signal) are
+unaffected. <strong>Fix:</strong> Store daily feature snapshots and join
+each sale to the features as of its sale date. Deferred until data
+volume justifies storage cost (~250K rows/year).</p>
+<p><strong>2. Backtest P&amp;L uses the target as the decision
+input.</strong> The simulated trading function compares each sale’s
+actual price against the model’s buy/sell thresholds. In production, the
+“offered price” comes from a customer or listing, not from the test set
+target. This means the backtest P&amp;L metric is directionally
+indicative but not a clean simulation of the production buy/sell policy.
+<strong>Fix:</strong> Generate a separate synthetic “offer stream” for
+backtesting, or use a held-out set of recent trade-in transactions as
+the offer source.</p>
+<p><strong>Impact:</strong> The reported 42% MAPE should be treated as
+an approximate lower bound. True out-of-sample accuracy with proper
+point-in-time features may be higher (worse). The model is still
+production-useful for directional signals and relative ranking, but the
+exact numeric accuracy claim requires the fixes above.</p>
 <hr />
 <h2 id="system-architecture-infrastructure">7. System Architecture &amp;
 Infrastructure</h2>
@@ -1624,6 +1650,42 @@ workflow)</td>
 </tr>
 </tbody>
 </table>
+<h3 id="level-1-dynamic-pricing-done">Level 1: Dynamic Pricing —
+DONE</h3>
+<table>
+<colgroup>
+<col style="width: 61%" />
+<col style="width: 38%" />
+</colgroup>
+<thead>
+<tr>
+<th>Deliverable</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Demand-aware pricing optimizer (inventory, velocity, competition,
+events, channel)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>Advanced evaluate endpoint
+(<code>POST /v1/evaluate/advanced</code>)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>Trade-in decision engine (BUY/DECLINE/HOLD with
+profit/risk/reasoning)</td>
+<td>Done</td>
+</tr>
+<tr>
+<td>Channel-specific pricing (in-store +5%, eBay +15%, online
+baseline)</td>
+<td>Done</td>
+</tr>
+</tbody>
+</table>
 <h3 id="remaining-work">Remaining Work</h3>
 <table>
 <colgroup>
@@ -1695,6 +1757,27 @@ meaningful MDAPE</td>
 <td>D1 archival strategy implementation</td>
 <td>P2</td>
 <td>Needed at ~6 months</td>
+</tr>
+<tr>
+<td>Level 2: Segment-based pricing (collector/flipper/casual/whale)</td>
+<td>P2</td>
+<td>Requires PowerUp Rewards data integration</td>
+</tr>
+<tr>
+<td>Level 3: Behavioral signals (search freq, watchlists, cart
+abandonment)</td>
+<td>P3</td>
+<td>Legal review needed for public company</td>
+</tr>
+<tr>
+<td>Daily feature snapshots for point-in-time ML training</td>
+<td>P1</td>
+<td>Fixes lookahead bias in training data</td>
+</tr>
+<tr>
+<td>Proper backtest simulation with separate offer stream</td>
+<td>P2</td>
+<td>Current backtest uses target as decision input</td>
 </tr>
 </tbody>
 </table>

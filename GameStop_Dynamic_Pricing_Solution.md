@@ -691,6 +691,15 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Agent REST proxy + WebSocket access | Done |
 | Agent dashboard page in frontend | Done |
 
+### Level 1: Dynamic Pricing — DONE
+
+| Deliverable | Status |
+|-------------|--------|
+| Demand-aware pricing optimizer (inventory, velocity, competition, events, channel) | Done |
+| Advanced evaluate endpoint (`POST /v1/evaluate/advanced`) | Done |
+| Trade-in decision engine (BUY/DECLINE/HOLD with profit/risk/reasoning) | Done |
+| Channel-specific pricing (in-store +5%, eBay +15%, online baseline) | Done |
+
 ### Remaining Work
 
 | Item | Priority | Notes |
@@ -706,6 +715,10 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Hierarchical Bayesian / GP models for low-volume | P3 | LightGBM with fallback is v1 |
 | Temporal Fusion Transformer for high-volume | P3 | Research item |
 | D1 archival strategy implementation | P2 | Needed at ~6 months |
+| Level 2: Segment-based pricing (collector/flipper/casual/whale) | P2 | Requires PowerUp Rewards data integration |
+| Level 3: Behavioral signals (search freq, watchlists, cart abandonment) | P3 | Legal review needed for public company |
+| Daily feature snapshots for point-in-time ML training | P1 | Fixes lookahead bias in training data |
+| Proper backtest simulation with separate offer stream | P2 | Current backtest uses target as decision input |
 
 ---
 
