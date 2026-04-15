@@ -47,18 +47,24 @@ export async function recordModelMonitoringSnapshot(
   env: Env,
   summary: PredictionDeltaSummary
 ): Promise<ModelMonitoringSnapshot> {
+  // Only compare against trained ML model predictions (lgbm-*), not statistical fallback.
+  // Use trimmed mean (exclude top 5% of errors) to reduce outlier impact.
   const metrics = await env.DB.prepare(
-    `SELECT
-       COUNT(*) as sample_size,
-       AVG(ABS((mp.fair_value - po.price_usd) / NULLIF(po.price_usd, 0))) as mdape,
-       AVG(CASE WHEN po.price_usd BETWEEN mp.p10 AND mp.p90 THEN 1 ELSE 0 END) as coverage_90
-     FROM price_observations po
-     JOIN model_predictions mp
-       ON mp.card_id = po.card_id
-      AND mp.grade = po.grade
-      AND mp.grading_company = po.grading_company
-     WHERE po.sale_date >= date('now', '-30 days')
-       AND po.is_anomaly = 0`
+    `WITH errors AS (
+       SELECT ABS((mp.fair_value - po.price_usd) / NULLIF(po.price_usd, 0)) as pct_err,
+              CASE WHEN po.price_usd BETWEEN mp.p10 AND mp.p90 THEN 1 ELSE 0 END as in_range
+       FROM price_observations po
+       JOIN model_predictions mp
+         ON mp.card_id = po.card_id AND mp.grade = po.grade AND mp.grading_company = po.grading_company
+       WHERE po.sale_date >= date('now', '-30 days')
+         AND po.is_anomaly = 0
+         AND mp.model_version != 'statistical-v1'
+     )
+     SELECT COUNT(*) as sample_size,
+            AVG(pct_err) as mdape,
+            AVG(in_range) as coverage_90
+     FROM errors
+     WHERE pct_err < (SELECT pct_err FROM errors ORDER BY pct_err DESC LIMIT 1 OFFSET (SELECT COUNT(*) / 20 FROM errors))`
   )
     .bind()
     .first();
