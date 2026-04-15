@@ -364,14 +364,40 @@ systemRoutes.post("/run-pipeline", async (c) => {
   const { computeAggregates } = await import("../services/aggregates");
   const { computeFeatures } = await import("../services/features");
   const { batchPredict } = await import("../services/inference");
+  const { rollUpSentiment } = await import("../services/sentiment-rollup");
 
   const results: Record<string, number | string> = {};
 
+  // Helper to log each step like the cron would
+  const logStep = async (source: string, fn: () => Promise<number>) => {
+    const logResult = await c.env.DB.prepare(
+      `INSERT INTO ingestion_log (source, run_type, status) VALUES (?, 'manual', 'started') RETURNING id`
+    ).bind(source).first();
+    const logId = (logResult?.id as number) || 0;
+    try {
+      const count = await fn();
+      results[source] = count;
+      if (logId) {
+        await c.env.DB.prepare(
+          `UPDATE ingestion_log SET status = 'completed', records_processed = ?, completed_at = datetime('now') WHERE id = ?`
+        ).bind(count, logId).run();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      results[source] = `error: ${msg}`;
+      if (logId) {
+        await c.env.DB.prepare(
+          `UPDATE ingestion_log SET status = 'failed', error_message = ?, completed_at = datetime('now') WHERE id = ?`
+        ).bind(msg, logId).run();
+      }
+    }
+  };
+
   try {
-    results.anomalies = await runAnomalyDetection(c.env);
-    await computeAggregates(c.env);
-    results.features = await computeFeatures(c.env);
-    results.predictions = await batchPredict(c.env);
+    await logStep("sentiment_rollup", () => rollUpSentiment(c.env));
+    await logStep("anomaly", () => runAnomalyDetection(c.env));
+    await logStep("features", async () => { await computeAggregates(c.env); return computeFeatures(c.env); });
+    await logStep("predictions", () => batchPredict(c.env));
     results.status = "complete";
   } catch (err) {
     results.status = "failed";
