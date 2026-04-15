@@ -17,8 +17,8 @@ const COMPARE_GRADES = ["8", "9", "9.5", "10"];
 const COMPARE_COMPANIES = ["PSA", "BGS", "CGC"];
 
 export function CardDetail({ card, onBack }: CardDetailProps) {
-  const [grade, setGrade] = useState("10");
-  const [gradingCompany, setGradingCompany] = useState("PSA");
+  const [grade, setGrade] = useState("RAW");
+  const [gradingCompany, setGradingCompany] = useState("RAW");
   const [historyDays, setHistoryDays] = useState(90);
   const [showExplainer, setShowExplainer] = useState(false);
   const [showComparison, setShowComparison] = useState(false);
