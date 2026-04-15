@@ -480,10 +480,10 @@ Ranked</h3>
 </tr>
 <tr>
 <td><strong>P1</strong></td>
-<td>Reddit API</td>
+<td>Reddit (old.reddit.com)</td>
 <td>Social sentiment</td>
-<td>OAuth REST</td>
-<td>$12K/yr (Standard tier)</td>
+<td>Browser Rendering scrape (old.reddit.com)</td>
+<td>Free (Cloudflare Workers)</td>
 <td>Every 5 min (cron)</td>
 </tr>
 <tr>
@@ -574,8 +574,9 @@ orchestrator.</p>
                            │
         ┌──────────────────┼──────────────────┐
         │                  │                  │
-   eBay/SoldComps    Reddit             PriceCharting
-   (every 15 min)    (every 5 min)     (daily 2am)
+   eBay/SoldComps    Reddit scrape      PriceCharting
+   (every 15 min)    (every 5 min,     (daily 2am)
+                      rotates subreddits)
         │                  │                  │
         ▼                  ▼                  ▼
    ┌─────────────────────────────────────────────┐
@@ -599,7 +600,7 @@ orchestrator.</p>
    │        Cloudflare D1 (Price History)         │
    │  + KV (cache hot prices, rate limiting)      │
    │  + R2 (raw data archive, model artifacts)    │
-   │  + Workers AI (sentiment NLP — Llama 3.1 8B) │
+   │  + Workers AI (sentiment NLP — Gemma 4 26B) │
    └──────────────────┬──────────────────────────┘
                       │
            ┌──────────┼──────────┐
@@ -841,7 +842,7 @@ buy price = <code>NRV * (1 - required_margin)</code>.</p>
 <hr />
 <h2 id="sentiment-analysis-pipeline">4. Sentiment Analysis Pipeline</h2>
 <h3 id="architecture">4.1 Architecture</h3>
-<pre><code>Reddit API (r/pokemontcg, r/baseballcards, etc.)
+<pre><code>Reddit via Browser Rendering (old.reddit.com/.json)
         │
         ▼
 ┌─────────────────────────────────────────┐
@@ -852,7 +853,7 @@ buy price = <code>NRV * (1 - required_margin)</code>.</p>
 │     → card: Charizard, grade: PSA 10     │
 │                                          │
 │  2. Sentiment Classification             │
-│     Workers AI (Llama 3.1 8B +           │
+│     Workers AI (Gemma 4 26B +            │
 │     DistilBERT) at the edge              │
 │     → bullish (0.85)                     │
 │                                          │
@@ -868,6 +869,12 @@ buy price = <code>NRV * (1 - required_margin)</code>.</p>
                    ▼
          D1 sentiment_scores table
          → Feeds into ML feature pipeline</code></pre>
+<p><strong>Note:</strong> Reddit deprecated its Data API in favor of
+Devvit, so we scrape via Cloudflare’s headless Chrome (Browser
+Rendering) instead of using the API directly. We fetch
+<code>old.reddit.com/&lt;subreddit&gt;.json</code> through Browser
+Rendering, which returns structured JSON without requiring API
+credentials.</p>
 <p><strong>Note:</strong> Twitter/X integration is
 <strong>DEFERRED</strong>. v1 uses Reddit only.</p>
 <h3 id="target-subreddits">4.2 Target Subreddits</h3>
@@ -1069,8 +1076,13 @@ Infrastructure</h2>
 </tr>
 <tr>
 <td><strong>NLP</strong></td>
-<td>Workers AI (Llama 3.1 8B Instruct + DistilBERT)</td>
+<td>Workers AI (Gemma 4 26B + DistilBERT)</td>
 <td><strong>Shipped</strong></td>
+</tr>
+<tr>
+<td><strong>Browser Rendering</strong></td>
+<td>Cloudflare headless Chrome</td>
+<td><strong>Shipped</strong> — Reddit scraping without API</td>
 </tr>
 <tr>
 <td><strong>ML Training</strong></td>
@@ -1131,28 +1143,54 @@ Infrastructure</h2>
 </table>
 <h3 id="security-authentication">7.1.1 Security &amp;
 Authentication</h3>
-<p>Implemented: - <strong>API key auth:</strong> All <code>/v1/*</code>
-routes require <code>X-API-Key</code> header (middleware in
-<code>auth.ts</code>). Bypassed in development environment. -
-<strong>Agent auth:</strong> All <code>/agents/*</code> routes also
-gated by the same API key in non-development environments. -
-<strong>Rate limiting:</strong> KV-based per-key throttling middleware
-on <code>/v1/*</code>. - <strong>Secrets management:</strong> All API
-keys stored via <code>wrangler secret put</code> —
-<code>SOLDCOMPS_API_KEY</code>, <code>PRICECHARTING_API_KEY</code>,
-<code>CARDHEDGER_API_KEY</code>, <code>REDDIT_CLIENT_ID</code>,
-<code>REDDIT_CLIENT_SECRET</code>,
-<code>POKEMON_PRICE_TRACKER_KEY</code>, <code>API_KEY</code>. -
-<strong>D1 access:</strong> Restricted to Workers bindings only — no
-public database endpoint.</p>
-<p>Required before production: - <strong>CORS restriction:</strong> Lock
-to GameStop domains only (currently <code>cors(&quot;*&quot;)</code>). -
-<strong>GameStop SSO:</strong> Dashboard should require GameStop SSO for
-production. - <strong>Data privacy:</strong> <code>seller_id</code>
-should be hashed before storage.</p>
+<p>Implemented: - <strong>SignIn gate:</strong> Dashboard requires an
+access code entry on a SignIn page. The code is server-validated against
+the <code>DEMO_ACCESS_CODE</code> secret. - <strong>Session
+tokens:</strong> <code>POST /v1/auth/login</code> accepts
+<code>{ code }</code> and returns an HMAC-signed session token with
+24-hour expiry, stored in KV. - <strong>Auth middleware:</strong> All
+<code>/v1/*</code> routes accept either a static API key
+(<code>X-API-Key</code> header) OR a session token
+(<code>Authorization: Bearer &lt;token&gt;</code>). Bypassed in
+development environment. - <strong>Session management:</strong>
+<code>POST /v1/auth/verify</code> checks token validity and returns
+<code>{ valid, expiresAt }</code>. <code>POST /v1/auth/logout</code>
+invalidates the session token in KV. - <strong>Agent auth:</strong> All
+<code>/agents/*</code> routes also gated by the same auth middleware in
+non-development environments. - <strong>CORS:</strong> Locked to allowed
+origins, configurable via <code>ALLOWED_ORIGINS</code> environment
+variable. - <strong>Rate limiting:</strong> KV-based throttling at 120
+requests/min per token on <code>/v1/*</code>. - <strong>Secrets
+management:</strong> All API keys stored via
+<code>wrangler secret put</code> — <code>SOLDCOMPS_API_KEY</code>,
+<code>PRICECHARTING_API_KEY</code>, <code>CARDHEDGER_API_KEY</code>,
+<code>POKEMON_PRICE_TRACKER_KEY</code>, <code>API_KEY</code>,
+<code>DEMO_ACCESS_CODE</code>, <code>SESSION_SECRET</code>. - <strong>D1
+access:</strong> Restricted to Workers bindings only — no public
+database endpoint.</p>
+<p>Required before production: - <strong>GameStop SSO:</strong>
+Dashboard should require GameStop SSO for production. - <strong>Data
+privacy:</strong> <code>seller_id</code> should be hashed before
+storage.</p>
+<h3 id="custom-domains-deployment">7.1.2 Custom Domains &amp;
+Deployment</h3>
+<ul>
+<li><strong>API:</strong> <code>api.gmestart.com</code> — Cloudflare
+Worker (Hono)</li>
+<li><strong>Dashboard:</strong> <code>app.gmestart.com</code> —
+Cloudflare Pages (Vite + React)</li>
+<li><strong>SignIn gate:</strong> Dashboard requires access code
+<code>GMESTART2026</code> before granting a session token. The code is
+validated server-side via <code>POST /v1/auth/login</code>.</li>
+</ul>
 <h3 id="api-endpoints">7.2 API Endpoints</h3>
-<p>All endpoints are under <code>/v1/</code> and require API key
-authentication (except the root health check).</p>
+<p>All endpoints are under <code>/v1/</code> and require API key or
+session token authentication (except the root health check and auth
+endpoints).</p>
+<p><strong>Auth:</strong></p>
+<pre><code>POST /v1/auth/login               — { code } → { token, expiresAt }
+POST /v1/auth/verify              — → { valid, expiresAt }
+POST /v1/auth/logout              — → { status }</code></pre>
 <p><strong>Root Health Check:</strong></p>
 <pre><code>GET  /
      → { service, version, status: &quot;healthy&quot;|&quot;degraded&quot;, environment,
@@ -1191,7 +1229,9 @@ GET  /v1/system/model             — Current model metadata from R2
 POST /v1/system/rollback          — Full rollback: copies versioned predictions from R2,
                                     re-imports into D1, invalidates KV cache, updates meta
      Body: { version_key: &quot;models/versions/...&quot; }
-POST /v1/system/bootstrap         — Bootstrap card catalog from PriceCharting</code></pre>
+POST /v1/system/bootstrap         — Bootstrap card catalog from PriceCharting
+POST /v1/system/seed              — Seed database with sample data for development/demo
+POST /v1/system/mock-internal     — Generate mock internal GameStop data for testing</code></pre>
 <p><strong>Agents (REST proxy for Durable Object <span class="citation" data-cites="callable">@callable</span> methods):</strong></p>
 <pre><code>GET  /v1/agents/monitor/status
 POST /v1/agents/monitor/check
@@ -1257,7 +1297,7 @@ recent alerts. - <code>clearAlerts()</code> — Clears active alerts. -
 management.</p>
 <h4 id="marketintelligenceagent">7.3.2 MarketIntelligenceAgent</h4>
 <p><strong>Purpose:</strong> Generates daily AI-powered market briefings
-using Workers AI (Llama 3.1 8B).</p>
+using Workers AI (Gemma 4 26B).</p>
 <table>
 <thead>
 <tr>
@@ -1289,7 +1329,7 @@ using Workers AI (Llama 3.1 8B).</p>
 <p><strong>Callable methods:</strong> -
 <code>generateDailyReport()</code> — Queries D1 for top
 gainers/decliners (7d), active alerts, sentiment summary, volume stats.
-Sends to Llama 3.1 8B for prose summary. Returns
+Sends to Gemma 4 26B for prose summary. Returns
 <code>MarketReport</code> with highlights, top movers, and market
 sentiment (bullish/bearish/neutral). - <code>getLatestReport()</code> —
 Most recent report. - <code>getReportHistory(count)</code> — Last N
@@ -1774,7 +1814,7 @@ Stack)</h2>
 <tr>
 <td>Cloudflare Workers AI</td>
 <td>~$10-50</td>
-<td>Llama 3.1 8B for reports + DistilBERT for sentiment</td>
+<td>Gemma 4 26B for reports + DistilBERT for sentiment</td>
 </tr>
 <tr>
 <td>Durable Objects (4 agents)</td>
@@ -1802,9 +1842,9 @@ Stack)</h2>
 <td>Graded Pokemon data</td>
 </tr>
 <tr>
-<td>Reddit API (Standard, prorated)</td>
-<td>$1,000</td>
-<td>Commercial use requirement</td>
+<td>Cloudflare Browser Rendering</td>
+<td>~$5-10</td>
+<td>Reddit scraping via headless Chrome</td>
 </tr>
 <tr>
 <td>GitHub Actions (retraining)</td>
@@ -1818,7 +1858,7 @@ Stack)</h2>
 </tr>
 <tr>
 <td><strong>Total</strong></td>
-<td><strong>~$1,280-$1,360/month</strong></td>
+<td><strong>~$280-$360/month</strong></td>
 <td></td>
 </tr>
 </tbody>
@@ -1879,9 +1919,10 @@ detection</td>
 <td>Detect and discount by 20%, or exclude from training</td>
 </tr>
 <tr>
-<td>Reddit API pricing changes</td>
+<td>Reddit scraping reliability</td>
 <td>Low</td>
-<td>Budget for Standard tier; sentiment is low-weight feature</td>
+<td>Browser Rendering may break if old.reddit.com changes format;
+fallback to direct .json endpoint or Devvit app</td>
 </tr>
 <tr>
 <td><strong>D1 10GB database limit</strong></td>

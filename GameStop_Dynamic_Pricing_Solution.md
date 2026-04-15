@@ -28,7 +28,7 @@ GameStop's collectibles business (graded trading cards — Pokemon, sports, TCG)
 | **P0** | PriceCharting API | Aggregated prices (all time) | REST API (40-char token) | ~$15-30/mo (Legendary tier) | Daily (2 AM cron) |
 | **P1** | PSA Population Reports | Grade population counts | Web scrape (psacard.com/pop) or GemRate | Free (GemRate) | Daily (3 AM cron) |
 | **P1** | CardHedger API | 40M+ transactions, multi-platform | REST API | $49+/mo | Near real-time |
-| **P1** | Reddit API | Social sentiment | OAuth REST | $12K/yr (Standard tier) | Every 5 min (cron) |
+| **P1** | Reddit (old.reddit.com) | Social sentiment | Browser Rendering scrape (old.reddit.com) | Free (Cloudflare Workers) | Every 5 min (cron) |
 | **P2** | Twitter/X API | Event detection, viral moments | Pay-per-use | ~$500-1K/mo | **DEFERRED** |
 | **P2** | TCGPlayer API | Pokemon/MTG market prices | Apply for access | Free (with approval) | Daily |
 | **P2** | PokemonPriceTracker API | Graded Pokemon prices + pop | REST API | $99/mo (Business) | Daily |
@@ -88,8 +88,9 @@ The entire pipeline runs on **Cloudflare Cron Triggers**, **Cloudflare Queues**,
                            │
         ┌──────────────────┼──────────────────┐
         │                  │                  │
-   eBay/SoldComps    Reddit             PriceCharting
-   (every 15 min)    (every 5 min)     (daily 2am)
+   eBay/SoldComps    Reddit scrape      PriceCharting
+   (every 15 min)    (every 5 min,     (daily 2am)
+                      rotates subreddits)
         │                  │                  │
         ▼                  ▼                  ▼
    ┌─────────────────────────────────────────────┐
@@ -113,7 +114,7 @@ The entire pipeline runs on **Cloudflare Cron Triggers**, **Cloudflare Queues**,
    │        Cloudflare D1 (Price History)         │
    │  + KV (cache hot prices, rate limiting)      │
    │  + R2 (raw data archive, model artifacts)    │
-   │  + Workers AI (sentiment NLP — Llama 3.1 8B) │
+   │  + Workers AI (sentiment NLP — Gemma 4 26B) │
    └──────────────────┬──────────────────────────┘
                       │
            ┌──────────┼──────────┐
@@ -282,7 +283,7 @@ Economics constants (implemented in `PricingRecommendationAgent`): marketplace f
 ### 4.1 Architecture
 
 ```
-Reddit API (r/pokemontcg, r/baseballcards, etc.)
+Reddit via Browser Rendering (old.reddit.com/.json)
         │
         ▼
 ┌─────────────────────────────────────────┐
@@ -293,7 +294,7 @@ Reddit API (r/pokemontcg, r/baseballcards, etc.)
 │     → card: Charizard, grade: PSA 10     │
 │                                          │
 │  2. Sentiment Classification             │
-│     Workers AI (Llama 3.1 8B +           │
+│     Workers AI (Gemma 4 26B +            │
 │     DistilBERT) at the edge              │
 │     → bullish (0.85)                     │
 │                                          │
@@ -310,6 +311,8 @@ Reddit API (r/pokemontcg, r/baseballcards, etc.)
          D1 sentiment_scores table
          → Feeds into ML feature pipeline
 ```
+
+**Note:** Reddit deprecated its Data API in favor of Devvit, so we scrape via Cloudflare's headless Chrome (Browser Rendering) instead of using the API directly. We fetch `old.reddit.com/<subreddit>.json` through Browser Rendering, which returns structured JSON without requiring API credentials.
 
 **Note:** Twitter/X integration is **DEFERRED**. v1 uses Reddit only.
 
@@ -397,7 +400,8 @@ Anomaly detection runs daily at **4 AM UTC** (before features at 5 AM, predictio
 | **Queues** | Cloudflare Queues (gamecards-ingestion, gamecards-sentiment) | **Shipped** |
 | **Orchestration** | Cloudflare Cron Triggers (8 schedules) | **Shipped** |
 | **Agents** | Cloudflare Durable Objects (Agents SDK) | **Shipped** — 4 agents |
-| **NLP** | Workers AI (Llama 3.1 8B Instruct + DistilBERT) | **Shipped** |
+| **NLP** | Workers AI (Gemma 4 26B + DistilBERT) | **Shipped** |
+| **Browser Rendering** | Cloudflare headless Chrome | **Shipped** — Reddit scraping without API |
 | **ML Training** | LightGBM + scikit-learn (offline, Python) | **Shipped** |
 | **ML Export** | ONNX via onnxmltools/skl2onnx → R2 | **Shipped** |
 | **ML Serving** | Batch predictions (R2 JSON → D1 model_predictions) | **Shipped** |
@@ -413,20 +417,36 @@ Anomaly detection runs daily at **4 AM UTC** (before features at 5 AM, predictio
 ### 7.1.1 Security & Authentication
 
 Implemented:
-- **API key auth:** All `/v1/*` routes require `X-API-Key` header (middleware in `auth.ts`). Bypassed in development environment.
-- **Agent auth:** All `/agents/*` routes also gated by the same API key in non-development environments.
-- **Rate limiting:** KV-based per-key throttling middleware on `/v1/*`.
-- **Secrets management:** All API keys stored via `wrangler secret put` — `SOLDCOMPS_API_KEY`, `PRICECHARTING_API_KEY`, `CARDHEDGER_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `POKEMON_PRICE_TRACKER_KEY`, `API_KEY`.
+- **SignIn gate:** Dashboard requires an access code entry on a SignIn page. The code is server-validated against the `DEMO_ACCESS_CODE` secret.
+- **Session tokens:** `POST /v1/auth/login` accepts `{ code }` and returns an HMAC-signed session token with 24-hour expiry, stored in KV.
+- **Auth middleware:** All `/v1/*` routes accept either a static API key (`X-API-Key` header) OR a session token (`Authorization: Bearer <token>`). Bypassed in development environment.
+- **Session management:** `POST /v1/auth/verify` checks token validity and returns `{ valid, expiresAt }`. `POST /v1/auth/logout` invalidates the session token in KV.
+- **Agent auth:** All `/agents/*` routes also gated by the same auth middleware in non-development environments.
+- **CORS:** Locked to allowed origins, configurable via `ALLOWED_ORIGINS` environment variable.
+- **Rate limiting:** KV-based throttling at 120 requests/min per token on `/v1/*`.
+- **Secrets management:** All API keys stored via `wrangler secret put` — `SOLDCOMPS_API_KEY`, `PRICECHARTING_API_KEY`, `CARDHEDGER_API_KEY`, `POKEMON_PRICE_TRACKER_KEY`, `API_KEY`, `DEMO_ACCESS_CODE`, `SESSION_SECRET`.
 - **D1 access:** Restricted to Workers bindings only — no public database endpoint.
 
 Required before production:
-- **CORS restriction:** Lock to GameStop domains only (currently `cors("*")`).
 - **GameStop SSO:** Dashboard should require GameStop SSO for production.
 - **Data privacy:** `seller_id` should be hashed before storage.
 
+### 7.1.2 Custom Domains & Deployment
+
+- **API:** `api.gmestart.com` — Cloudflare Worker (Hono)
+- **Dashboard:** `app.gmestart.com` — Cloudflare Pages (Vite + React)
+- **SignIn gate:** Dashboard requires access code `GMESTART2026` before granting a session token. The code is validated server-side via `POST /v1/auth/login`.
+
 ### 7.2 API Endpoints
 
-All endpoints are under `/v1/` and require API key authentication (except the root health check).
+All endpoints are under `/v1/` and require API key or session token authentication (except the root health check and auth endpoints).
+
+**Auth:**
+```
+POST /v1/auth/login               — { code } → { token, expiresAt }
+POST /v1/auth/verify              — → { valid, expiresAt }
+POST /v1/auth/logout              — → { status }
+```
 
 **Root Health Check:**
 ```
@@ -492,6 +512,8 @@ POST /v1/system/rollback          — Full rollback: copies versioned prediction
                                     re-imports into D1, invalidates KV cache, updates meta
      Body: { version_key: "models/versions/..." }
 POST /v1/system/bootstrap         — Bootstrap card catalog from PriceCharting
+POST /v1/system/seed              — Seed database with sample data for development/demo
+POST /v1/system/mock-internal     — Generate mock internal GameStop data for testing
 ```
 
 **Agents (REST proxy for Durable Object @callable methods):**
@@ -540,7 +562,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 
 #### 7.3.2 MarketIntelligenceAgent
 
-**Purpose:** Generates daily AI-powered market briefings using Workers AI (Llama 3.1 8B).
+**Purpose:** Generates daily AI-powered market briefings using Workers AI (Gemma 4 26B).
 
 | Property | Value |
 |----------|-------|
@@ -552,7 +574,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 **State:** `reports[]`, `lastGeneratedAt`, `totalReports`
 
 **Callable methods:**
-- `generateDailyReport()` — Queries D1 for top gainers/decliners (7d), active alerts, sentiment summary, volume stats. Sends to Llama 3.1 8B for prose summary. Returns `MarketReport` with highlights, top movers, and market sentiment (bullish/bearish/neutral).
+- `generateDailyReport()` — Queries D1 for top gainers/decliners (7d), active alerts, sentiment summary, volume stats. Sends to Gemma 4 26B for prose summary. Returns `MarketReport` with highlights, top movers, and market sentiment (bullish/bearish/neutral).
 - `getLatestReport()` — Most recent report.
 - `getReportHistory(count)` — Last N reports (default 7).
 - `getStatus()` — Generation stats.
@@ -700,16 +722,16 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Cloudflare KV | ~$5-10 | Price cache + rate limiting |
 | Cloudflare R2 | ~$5-10 | Model artifacts, data archive (no egress fees) |
 | Cloudflare Queues | ~$1-5 | Two queues, moderate volume |
-| Cloudflare Workers AI | ~$10-50 | Llama 3.1 8B for reports + DistilBERT for sentiment |
+| Cloudflare Workers AI | ~$10-50 | Gemma 4 26B for reports + DistilBERT for sentiment |
 | Durable Objects (4 agents) | ~$5-15 | Billed per request + storage |
 | SoldComps API (Scale) | $59 | Primary market data |
 | CardHedger API | $49 | Multi-platform data |
 | PriceCharting (Legendary) | ~$25 | Historical/aggregated prices |
 | PokemonPriceTracker (Business) | $99 | Graded Pokemon data |
-| Reddit API (Standard, prorated) | $1,000 | Commercial use requirement |
+| Cloudflare Browser Rendering | ~$5-10 | Reddit scraping via headless Chrome |
 | GitHub Actions (retraining) | ~$0-10 | Free tier usually sufficient |
 | MLflow (local) | $0 | Self-hosted |
-| **Total** | **~$1,280-$1,360/month** |
+| **Total** | **~$280-$360/month** |
 
 **Deferred costs (not in v1):**
 - Twitter/X API: ~$500-1K/mo
@@ -730,7 +752,7 @@ Four Durable Object agents run autonomously alongside the cron pipeline. Each us
 | Price history cold start | Medium | Backfill from PriceCharting CSV, SoldComps 365-day lookback |
 | Fat-tailed prices break the model | Medium | Huber loss, log-transform, quantile regression, IQR outlier detection |
 | eBay "Best Offer" bias (+15-25%) | Medium | Detect and discount by 20%, or exclude from training |
-| Reddit API pricing changes | Low | Budget for Standard tier; sentiment is low-weight feature |
+| Reddit scraping reliability | Low | Browser Rendering may break if old.reddit.com changes format; fallback to direct .json endpoint or Devvit app |
 | **D1 10GB database limit** | Medium | Archive old price_observations to R2 at ~6 months; keep only recent windows in D1 |
 | **Worker CPU time limits (30s)** | Medium | Batch D1 writes at 90 statements; chunk large operations; use Queues for async |
 | **KV eventual consistency** | Low | 5-minute TTL on price cache; evaluate endpoint reads D1 directly |
