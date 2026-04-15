@@ -196,6 +196,41 @@ export interface BatchEvaluateResult {
   error?: string;
 }
 
+export interface SystemHealth {
+  status: "healthy" | "warning" | "degraded";
+  predictions: {
+    stale: boolean;
+    latestPredictionAt: string | null;
+    hoursSincePrediction: number | null;
+    hoursSinceScoring: number | null;
+  };
+  model: {
+    version: string;
+    model_version: string;
+    cards_scored: number;
+    scored_at: string;
+  } | null;
+  drift: {
+    status: string;
+    mdapePct: number;
+    coverage90: number;
+    message: string;
+    createdAt: string;
+  } | null;
+  catalog: { totalCards: number };
+  ingestion: { recentRuns: Array<{ source: string; status: string; records: number; at: string }> };
+}
+
+export interface ActivityRun {
+  source: string;
+  status: string;
+  records: number;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+}
+
 export interface MarketIndex {
   pokemon_index: number;
   pokemon_trend_30d: string;
@@ -328,4 +363,11 @@ export const api = {
 
   getStaleCards: (limit = 20) =>
     fetchApi<{ cards: StaleCard[] }>(`/market/stale?limit=${limit}`),
+
+  // System
+  getSystemHealth: () =>
+    fetchApi<SystemHealth>("/system/health"),
+
+  getActivity: (limit = 25) =>
+    fetchApi<{ runs: ActivityRun[] }>(`/system/activity?limit=${limit}`),
 };

@@ -9,6 +9,7 @@ import { EvaluateCard } from "./components/EvaluateCard";
 import { AlertsList } from "./components/AlertsList";
 import { AgentDashboard } from "./components/AgentDashboard";
 import { SignIn } from "./components/SignIn";
+import { CategoryBrowse } from "./components/CategoryBrowse";
 import {
   LayoutDashboard,
   Search,
@@ -196,7 +197,12 @@ function AppShell() {
           {CATEGORIES.map((cat) => (
             <button
               key={cat.value}
-              onClick={() => setActiveCategory(cat.value)}
+              onClick={() => {
+                setActiveCategory(cat.value);
+                if (cat.value) {
+                  navigate("/search");
+                }
+              }}
               className={`shrink-0 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 activeCategory === cat.value
                   ? "bg-accent/10 text-accent"
@@ -226,11 +232,20 @@ function AppShell() {
             path="/search"
             element={
               <div className="space-y-6">
-                <h1 className="text-2xl font-bold text-text-primary">Card Search</h1>
+                <h1 className="text-2xl font-bold text-text-primary">
+                  {activeCategory
+                    ? CATEGORIES.find((c) => c.value === activeCategory)?.label || "Cards"
+                    : "Card Search"}
+                </h1>
                 <p className="text-sm text-text-secondary">
-                  Find any graded card and view real-time pricing data
-                  {activeCategory && ` — filtered to ${CATEGORIES.find((c) => c.value === activeCategory)?.label}`}
+                  {activeCategory
+                    ? `Browse ${CATEGORIES.find((c) => c.value === activeCategory)?.label} cards with live pricing`
+                    : "Find any graded card and view real-time pricing data"}
                 </p>
+                <div className="lg:hidden">
+                  <SearchBar onSelect={handleSelectCard} category={activeCategory} />
+                </div>
+                <CategoryBrowse category={activeCategory} onCardSelect={handleSelectCard} />
               </div>
             }
           />
