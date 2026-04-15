@@ -19,6 +19,13 @@ dependencies = [
 ]
 
 [project.scripts]
+# Primary CLI names (match docs and CI workflows)
+gmestart-train = "gamecards_ml.train:cli"
+gmestart-backtest = "gamecards_ml.backtest:cli"
+gmestart-export = "gamecards_ml.export_onnx:cli"
+gmestart-score = "gamecards_ml.batch_score:cli"
+gmestart-export-features = "gamecards_ml.export_features:cli"
+# Legacy aliases (backward compat)
 gamecards-train = "gamecards_ml.train:cli"
 gamecards-backtest = "gamecards_ml.backtest:cli"
 gamecards-export = "gamecards_ml.export_onnx:cli"

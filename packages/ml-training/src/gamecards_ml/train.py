@@ -164,10 +164,10 @@ def evaluate_models(
     mdape = float(np.median(abs_pct_errors) * 100)
     mae = float(np.mean(np.abs(y_actual - y_pred)))
 
-    # Coverage of raw 90% prediction interval (before conformal calibration)
+    # Coverage of raw p10-p90 interval (this is an 80% nominal interval, not 90%)
     lower = np.expm1(models[0.10].predict(X_test))
     upper = np.expm1(models[0.90].predict(X_test))
-    coverage = float(np.mean((y_actual >= lower) & (y_actual <= upper)) * 100)
+    coverage_80 = float(np.mean((y_actual >= lower) & (y_actual <= upper)) * 100)
 
     # Interval width
     interval_width = float(np.mean((upper - lower) / np.maximum(y_pred, 1e-8)) * 100)
@@ -185,20 +185,16 @@ def evaluate_models(
     global _last_conformal_correction
     _last_conformal_correction = conformal_pricer.correction
 
-    # Directional accuracy (did we predict the right trend?)
-    if len(y_actual) > 1:
-        actual_direction = np.sign(np.diff(y_actual))
-        pred_direction = np.sign(np.diff(y_pred))
-        dir_accuracy = float(np.mean(actual_direction == pred_direction) * 100)
-    else:
-        dir_accuracy = 0.0
+    # Rank accuracy: does the model correctly rank expensive vs cheap cards?
+    # (More meaningful than directional accuracy on a mixed-card cross-section)
+    rank_corr = float(np.corrcoef(y_actual, y_pred)[0, 1]) if len(y_actual) > 2 else 0.0
 
     metrics = {
         "mdape_overall": mdape,
         "mae_overall": mae,
-        "coverage_90": coverage,
+        "coverage_p10_p90": coverage_80,
         "interval_width_pct": interval_width,
-        "directional_accuracy": dir_accuracy,
+        "rank_correlation": round(rank_corr, 4),
         "test_samples": len(test_df),
     }
 
@@ -277,7 +273,10 @@ def cli(data: str, output: str, lr: float, num_leaves: int):
         metrics = evaluate_models(models, df, config)
         # Quality gate: abort before saving if model quality is unacceptable
         mdape = metrics["mdape_overall"]
-        MAX_MDAPE = 50.0  # Maximum acceptable MdAPE before blocking deployment
+        # Quality gate: block deployment if MdAPE exceeds threshold.
+        # Current: 40% (achievable with SoldComps + PriceCharting data).
+        # Target: <15% for high-volume cards (requires cleaner data + more sources).
+        MAX_MDAPE = 40.0
         if mdape > MAX_MDAPE:
             logger.error(
                 f"QUALITY GATE FAILED: MdAPE {mdape:.1f}% exceeds threshold {MAX_MDAPE}%. "
@@ -289,7 +288,7 @@ def cli(data: str, output: str, lr: float, num_leaves: int):
 
         logger.info(f"Training complete. Models saved to {output}")
         logger.info(f"MdAPE: {metrics['mdape_overall']:.1f}% (threshold: {MAX_MDAPE}%)")
-        logger.info(f"Coverage (90%): {metrics['coverage_90']:.1f}%")
+        logger.info(f"Coverage (p10-p90): {metrics['coverage_p10_p90']:.1f}%")
 
 
 if __name__ == "__main__":

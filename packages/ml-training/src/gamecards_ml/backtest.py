@@ -128,18 +128,23 @@ def simulate_trading(
     sell_threshold: np.ndarray,
 ) -> float:
     """
-    Simulate buy/sell decisions.
-    Buy when actual < buy_threshold, sell when actual > sell_threshold.
-    P&L = sum of (actual - buy_price) for buys where we later sell at fair value.
+    Simulate buy/sell decisions using ONLY model predictions (not actuals).
+
+    Decision: compare predicted price against buy/sell thresholds.
+    Settlement: P&L computed against the actual realized price.
+
+    This is NOT clairvoyant — the decision is made on predicted values,
+    which is what the system would have at decision time.
     """
     total_pnl = 0.0
     for i in range(len(actual)):
-        if actual[i] < buy_threshold[i]:
-            # We would buy — profit is fair value minus purchase price
-            total_pnl += predicted[i] - actual[i]
-        elif actual[i] > sell_threshold[i]:
-            # We would sell — profit is sale price minus fair value
+        # Decision uses predicted price vs thresholds (available at decision time)
+        if predicted[i] < buy_threshold[i]:
+            # Model says this card is undervalued — buy at predicted, sell at actual
             total_pnl += actual[i] - predicted[i]
+        elif predicted[i] > sell_threshold[i]:
+            # Model says this card is overvalued — sell at predicted, buy back at actual
+            total_pnl += predicted[i] - actual[i]
     return float(total_pnl)
 
 

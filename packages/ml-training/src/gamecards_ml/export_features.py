@@ -93,7 +93,12 @@ def export_features(account_id: str, database_id: str, api_token: str, output_pa
 
 
 def export_training_data(account_id: str, database_id: str, api_token: str, output_path: str) -> int:
-    """Export price_observations joined with features for model training."""
+    """Export price_observations joined with features for model training.
+
+    IMPORTANT: Only joins sales that occurred AFTER the feature snapshot
+    was computed, preventing future information leakage. Sales before
+    the feature computation date get NULL features (excluded from training).
+    """
     rows = query_d1(
         account_id, database_id, api_token,
         """SELECT po.card_id, po.grade, po.grading_company, po.price_usd, po.sale_date,
@@ -103,8 +108,10 @@ def export_training_data(account_id: str, database_id: str, api_token: str, outp
              ON fs.card_id = po.card_id
              AND fs.grade = COALESCE(po.grade, 'RAW')
              AND fs.grading_company = COALESCE(po.grading_company, 'RAW')
+             AND fs.computed_at <= po.sale_date
            WHERE po.is_anomaly = 0
              AND po.grade IS NOT NULL
+             AND po.price_usd >= 10
            ORDER BY po.sale_date"""
     )
 
