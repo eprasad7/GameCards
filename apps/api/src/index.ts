@@ -30,17 +30,28 @@ app.use("*", logger());
 app.use("/v1/*", apiKeyAuth);
 app.use("/v1/*", rateLimiter);
 
-// Health check — always public, shows environment info
-app.get("/", (c) =>
-  c.json({
+// Health check — always public, reflects pipeline status
+app.get("/", async (c) => {
+  // Quick freshness check — is model_predictions populated and recent?
+  const latest = await c.env.DB.prepare(
+    `SELECT MAX(predicted_at) as latest FROM model_predictions`
+  ).bind().first();
+
+  const latestAt = latest?.latest as string | null;
+  const hoursSince = latestAt
+    ? (Date.now() - new Date(latestAt).getTime()) / (1000 * 60 * 60)
+    : null;
+  const isStale = hoursSince === null || hoursSince > 36;
+
+  return c.json({
     service: "GameCards Dynamic Pricing Engine",
     version: "1.0.0",
-    status: "healthy",
+    status: isStale ? "degraded" : "healthy",
     environment: c.env.ENVIRONMENT || "unknown",
     auth: c.env.ENVIRONMENT === "development" ? "bypassed" : "required",
-    agents: ["price-monitor", "market-intelligence", "competitor-tracker", "pricing-recommendation"],
-  })
-);
+    predictions: isStale ? "stale" : "fresh",
+  });
+});
 
 // API routes
 const api = app.basePath("/v1");

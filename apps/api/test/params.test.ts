@@ -1,14 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { parsePositiveInt } from "../src/lib/params";
 
-// Extracted from apps/api/src/lib/params.ts
-function parsePositiveInt(value: string | undefined, defaultVal: number, max: number): number {
-  if (!value) return defaultVal;
-  const n = parseInt(value, 10);
-  if (!Number.isFinite(n) || n <= 0) return defaultVal;
-  return Math.min(n, max);
-}
-
-describe("parsePositiveInt", () => {
+describe("parsePositiveInt (production import)", () => {
   it("returns default for undefined", () => {
     expect(parsePositiveInt(undefined, 90, 365)).toBe(90);
   });

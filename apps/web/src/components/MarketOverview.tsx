@@ -1,13 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
-import { api, type Card } from "../lib/api";
+import { api, type Card, type Alert } from "../lib/api";
 import { StatCard } from "./StatCard";
-import { TrendingUp, TrendingDown, Zap } from "lucide-react";
+import { TrustBadge } from "./TrustBadge";
+import {
+  TrendingUp,
+  Zap,
+  AlertTriangle,
+  ShoppingCart,
+  ChevronRight,
+  Eye,
+} from "lucide-react";
 
 interface MarketOverviewProps {
   onCardSelect?: (card: Card) => void;
+  alerts?: Alert[];
+  onNavigate?: (path: string) => void;
 }
 
-export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
+export function MarketOverview({ onCardSelect, alerts = [], onNavigate }: MarketOverviewProps) {
   const { data: market, isLoading } = useQuery({
     queryKey: ["market-index"],
     queryFn: api.getMarketIndex,
@@ -38,7 +48,6 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
       const card = await api.getCard(cardId);
       onCardSelect(card as Card);
     } catch {
-      // Fallback: navigate with minimal data, CardDetail will fetch the rest
       onCardSelect({ id: cardId, name: cardId, set_name: "", set_year: 0, card_number: "", category: "", player_character: null, image_url: null });
     }
   };
@@ -56,10 +65,19 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
   const pokemonTrend = market?.pokemon_trend_30d || "+0.0%";
   const sportsTrend = market?.sports_trend_30d || "+0.0%";
 
+  // Derive action items from available data
+  const highSeverityAlerts = alerts.filter((a) => a.magnitude >= 2);
+  const medSeverityAlerts = alerts.filter((a) => a.magnitude >= 1 && a.magnitude < 2);
+  const topBuys = moversDown?.movers?.slice(0, 5) || [];
+  const bigMoves = moversUp?.movers?.filter((m) => Math.abs(m.change_pct) >= 10).slice(0, 5) || [];
+  const trendingCards = trending?.trending?.slice(0, 6) || [];
+
+  const totalActions = highSeverityAlerts.length + topBuys.length + bigMoves.length;
+
   return (
     <div className="space-y-6">
-      {/* Index Cards — per-category trends */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ─── Compact Market Pulse ─── */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Pokemon Index"
           value={market?.pokemon_index?.toLocaleString() ?? "--"}
@@ -73,26 +91,173 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
           trendValue={sportsTrend}
         />
         <StatCard
-          label="Market Volatility"
-          value={market?.volatility ?? "--"}
-          subtitle="30-day measure"
+          label="Actions Today"
+          value={totalActions || "--"}
+          subtitle={totalActions ? `${highSeverityAlerts.length} urgent` : "All clear"}
+          variant={highSeverityAlerts.length > 0 ? "sell" : "default"}
         />
         <StatCard
-          label="Last Updated"
-          value={market?.updated_at ? new Date(market.updated_at).toLocaleTimeString() : "--"}
-          subtitle="Auto-refreshes"
+          label="Market Volatility"
+          value={market?.volatility ?? "--"}
+          subtitle={market?.updated_at ? `Updated ${new Date(market.updated_at).toLocaleTimeString()}` : ""}
         />
       </div>
 
-      {/* Trending Cards (from sentiment) */}
-      {trending?.trending && trending.trending.length > 0 && (
-        <div className="rounded-lg border border-border bg-bg-card shadow-sm">
+      {/* ─── Urgent Alerts ─── */}
+      {highSeverityAlerts.length > 0 && (
+        <section className="rounded-lg border border-sell/30 bg-sell/5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-sell/20 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-sell" />
+              <h3 className="text-sm font-bold text-text-primary">Needs Attention Now</h3>
+              <span className="rounded-full bg-sell/15 px-2 py-0.5 text-[11px] font-bold text-sell">{highSeverityAlerts.length}</span>
+            </div>
+            {onNavigate && (
+              <button onClick={() => onNavigate("/alerts")} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent-hover">
+                All alerts <ChevronRight className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-sell/10">
+            {highSeverityAlerts.slice(0, 3).map((alert) => (
+              <button
+                key={alert.id}
+                onClick={() => handleMoverClick(alert.card_id)}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sell/5 min-h-[44px]"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-text-primary truncate">{alert.card_name}</span>
+                    <TrustBadge variant={alert.magnitude >= 3 ? "manual-review" : "sentiment-spike"} />
+                  </div>
+                  <p className="mt-0.5 text-xs text-text-secondary truncate">{alert.message}</p>
+                </div>
+                <span className="shrink-0 text-xs text-text-muted">{new Date(alert.created_at).toLocaleTimeString()}</span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Two-Column Queue: Buy Opportunities + Big Moves ─── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Buy Opportunities (biggest decliners = potential bargains) */}
+        <section className="rounded-lg border border-border bg-bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-buy" />
+              <h3 className="text-sm font-bold text-text-primary">Buy Opportunities</h3>
+            </div>
+            {onNavigate && (
+              <button onClick={() => onNavigate("/evaluate")} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent-hover">
+                Evaluate <ChevronRight className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div>
+            {topBuys.length > 0 ? topBuys.map((m, i) => (
+              <button
+                key={m.card_id}
+                onClick={() => handleMoverClick(m.card_id)}
+                className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
+                  i < topBuys.length - 1 ? "border-b border-border" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-buy/10 text-xs font-bold text-buy">{i + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
+                    <p className="text-xs text-text-muted">{m.grading_company} {m.grade} &middot; ${m.recent_avg.toFixed(0)}</p>
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="text-sm font-bold text-sell">{m.change_pct.toFixed(1)}%</span>
+                  <p className="text-[11px] text-text-muted">was ${m.prior_avg.toFixed(0)}</p>
+                </div>
+              </button>
+            )) : (
+              <div className="px-4 py-6 text-center text-sm text-text-muted">No opportunities detected</div>
+            )}
+          </div>
+        </section>
+
+        {/* Big Price Moves (gainers needing review) */}
+        <section className="rounded-lg border border-border bg-bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-bold text-text-primary">Major Price Moves</h3>
+            </div>
+          </div>
+          <div>
+            {bigMoves.length > 0 ? bigMoves.map((m, i) => (
+              <button
+                key={m.card_id}
+                onClick={() => handleMoverClick(m.card_id)}
+                className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
+                  i < bigMoves.length - 1 ? "border-b border-border" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
+                    <p className="text-xs text-text-muted">{m.grading_company} {m.grade}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TrustBadge variant={Math.abs(m.change_pct) >= 25 ? "manual-review" : "sentiment-spike"} detail={`${m.change_pct > 0 ? "+" : ""}${m.change_pct.toFixed(0)}%`} />
+                  <span className="text-sm font-bold text-text-primary">${m.recent_avg.toFixed(0)}</span>
+                </div>
+              </button>
+            )) : (
+              <div className="px-4 py-6 text-center text-sm text-text-muted">No major moves this week</div>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* ─── Medium-Priority Alerts ─── */}
+      {medSeverityAlerts.length > 0 && (
+        <section className="rounded-lg border border-border bg-bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Eye className="h-4 w-4 text-hold" />
+              <h3 className="text-sm font-bold text-text-primary">Review Queue</h3>
+              <span className="rounded-full bg-hold/10 px-2 py-0.5 text-[11px] font-bold text-hold">{medSeverityAlerts.length}</span>
+            </div>
+            {onNavigate && (
+              <button onClick={() => onNavigate("/alerts")} className="flex items-center gap-1 text-xs font-medium text-accent hover:text-accent-hover">
+                View all <ChevronRight className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          <div className="divide-y divide-border">
+            {medSeverityAlerts.slice(0, 4).map((alert) => (
+              <button
+                key={alert.id}
+                onClick={() => handleMoverClick(alert.card_id)}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-bg-hover min-h-[44px]"
+              >
+                <span className="text-sm text-text-primary truncate flex-1">{alert.card_name}</span>
+                <span className="shrink-0 rounded-sm bg-bg-secondary px-1.5 py-0.5 text-[11px] text-text-muted">{alert.alert_type.replace(/_/g, " ")}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-text-muted" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Trending (Sentiment-Driven) ─── */}
+      {trendingCards.length > 0 && (
+        <section className="rounded-lg border border-border bg-bg-card shadow-sm">
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <Zap className="h-4 w-4 text-warning" />
             <h3 className="text-sm font-bold text-text-primary">Trending Now</h3>
+            <TrustBadge variant="sentiment-spike" detail="Social signal" />
           </div>
           <div className="flex gap-3 overflow-x-auto p-4">
-            {trending.trending.slice(0, 8).map((t: Record<string, unknown>) => (
+            {trendingCards.map((t: Record<string, unknown>) => (
               <button
                 key={t.card_id as string}
                 onClick={() => handleMoverClick(t.card_id as string)}
@@ -103,75 +268,33 @@ export function MarketOverview({ onCardSelect }: MarketOverviewProps) {
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Movers — clickable */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-lg border border-border bg-bg-card shadow-sm">
+      {/* ─── Top Gainers ─── */}
+      {moversUp?.movers && moversUp.movers.length > 0 && (
+        <section className="rounded-lg border border-border bg-bg-card shadow-sm">
           <div className="flex items-center gap-2 border-b border-border px-4 py-3">
             <TrendingUp className="h-4 w-4 text-buy" />
             <h3 className="text-sm font-bold text-text-primary">Top Gainers (7d)</h3>
           </div>
-          <div>
-            {moversUp?.movers?.slice(0, 5).map((m, i) => (
+          <div className="grid gap-0 sm:grid-cols-2">
+            {moversUp.movers.slice(0, 6).map((m, i) => (
               <button
                 key={m.card_id}
                 onClick={() => handleMoverClick(m.card_id)}
-                className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
-                  i < 4 ? "border-b border-border" : ""
-                }`}
+                className="flex items-center justify-between border-b border-border px-4 py-2.5 text-left transition-colors hover:bg-bg-hover min-h-[44px] last:border-b-0 sm:[&:nth-last-child(2)]:border-b-0"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-secondary text-xs font-bold text-text-muted">{i + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
-                    <p className="text-xs text-text-muted">{m.grading_company} {m.grade}</p>
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-bold text-text-muted">{i + 1}</span>
+                  <span className="text-sm font-medium text-text-primary truncate">{m.name}</span>
                 </div>
-                <div className="shrink-0 text-right">
-                  <span className="text-sm font-bold text-buy">+{m.change_pct.toFixed(1)}%</span>
-                  <p className="text-xs text-text-muted">${m.recent_avg.toFixed(2)}</p>
-                </div>
+                <span className="shrink-0 text-sm font-bold text-buy">+{m.change_pct.toFixed(1)}%</span>
               </button>
-            )) || (
-              <div className="px-4 py-6 text-center text-sm text-text-muted">No data yet</div>
-            )}
+            ))}
           </div>
-        </div>
-
-        <div className="rounded-lg border border-border bg-bg-card shadow-sm">
-          <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-            <TrendingDown className="h-4 w-4 text-sell" />
-            <h3 className="text-sm font-bold text-text-primary">Top Decliners (7d)</h3>
-          </div>
-          <div>
-            {moversDown?.movers?.slice(0, 5).map((m, i) => (
-              <button
-                key={m.card_id}
-                onClick={() => handleMoverClick(m.card_id)}
-                className={`flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
-                  i < 4 ? "border-b border-border" : ""
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-secondary text-xs font-bold text-text-muted">{i + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
-                    <p className="text-xs text-text-muted">{m.grading_company} {m.grade}</p>
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <span className="text-sm font-bold text-sell">{m.change_pct.toFixed(1)}%</span>
-                  <p className="text-xs text-text-muted">${m.recent_avg.toFixed(2)}</p>
-                </div>
-              </button>
-            )) || (
-              <div className="px-4 py-6 text-center text-sm text-text-muted">No data yet</div>
-            )}
-          </div>
-        </div>
-      </div>
+        </section>
+      )}
     </div>
   );
 }

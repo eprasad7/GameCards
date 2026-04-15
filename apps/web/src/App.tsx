@@ -196,20 +196,7 @@ function AppShell() {
           <Route
             path="/"
             element={
-              <div className="space-y-6">
-                <MarketOverview onCardSelect={handleSelectCard} />
-                {alerts.length > 0 && (
-                  <div>
-                    <div className="mb-3 flex items-center justify-between">
-                      <h2 className="text-lg font-bold text-text-primary">Active Alerts</h2>
-                      <button onClick={() => navigate("/alerts")} className="text-sm font-medium text-accent hover:text-accent-hover">
-                        View all
-                      </button>
-                    </div>
-                    <AlertsList alerts={alerts.slice(0, 5)} onResolve={handleResolveAlert} />
-                  </div>
-                )}
-              </div>
+              <MarketOverview onCardSelect={handleSelectCard} alerts={alerts} onNavigate={navigate} />
             }
           />
           <Route
@@ -242,12 +229,12 @@ function AppShell() {
             element={
               <div className="space-y-6">
                 <div>
-                  <h1 className="text-2xl font-bold text-text-primary">Alerts</h1>
+                  <h1 className="text-2xl font-bold text-text-primary">Alert Triage</h1>
                   <p className="text-sm text-text-secondary">
-                    {alerts.length} active alert{alerts.length !== 1 ? "s" : ""}
+                    {alerts.length} active alert{alerts.length !== 1 ? "s" : ""} — resolve, snooze, or investigate
                   </p>
                 </div>
-                <AlertsList alerts={alerts} onResolve={handleResolveAlert} />
+                <AlertsList alerts={alerts} onResolve={handleResolveAlert} onCardClick={(cardId) => navigate(`/card/${cardId}`)} showControls />
               </div>
             }
           />

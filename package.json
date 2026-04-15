@@ -2,7 +2,7 @@
   "name": "gamecards",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev": "pnpm dev:api & pnpm dev:web",
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
     "deploy:api": "pnpm --filter api run deploy:prod",

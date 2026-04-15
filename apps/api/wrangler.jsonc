@@ -108,10 +108,9 @@
     "production": {
       "vars": {
         "ENVIRONMENT": "production"
-      },
-      "routes": [
-        { "pattern": "gamecards-api.yourdomain.com", "custom_domain": true }
-      ]
+      }
+      // To add a custom domain, uncomment and replace:
+      // "routes": [{ "pattern": "api.yourdomain.com", "custom_domain": true }]
     }
   }
 }
