@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
+import { bootstrapCatalog } from "../services/ingestion/bootstrap";
 
 export const systemRoutes = new Hono<{ Bindings: Env }>();
 
@@ -119,4 +120,19 @@ systemRoutes.post("/rollback", async (c) => {
   await c.env.MODELS.put("models/batch_predictions.json", body2);
 
   return c.json({ status: "rolled_back", from: version_key, to: "models/batch_predictions.json" });
+});
+
+/**
+ * POST /v1/system/bootstrap
+ *
+ * Bootstrap card_catalog from PriceCharting CSV in R2.
+ * Upload the CSV to R2 at bootstrap/pricecharting_catalog.csv first.
+ */
+systemRoutes.post("/bootstrap", async (c) => {
+  try {
+    const result = await bootstrapCatalog(c.env);
+    return c.json({ status: "ok", ...result });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
