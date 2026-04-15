@@ -341,104 +341,137 @@ function AgentCards() {
         <span className="text-xs text-text-muted">4 Durable Objects</span>
       </div>
 
-      <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-4">
-        {/* Price Monitor */}
-        <div className="border-b border-r border-border p-4 sm:border-b lg:border-b-0">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Activity className="h-3.5 w-3.5 text-accent" />
-              <span className="text-xs font-bold text-text-primary">Price Monitor</span>
-            </div>
-            <button onClick={handleTriggerMonitor} className="rounded bg-bg-secondary px-2 py-0.5 text-[10px] font-medium text-text-secondary hover:bg-bg-hover">Run</button>
-          </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Alerts</span>
-              <span className="font-semibold text-accent">{monitor?.activeAlerts ?? 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Checks</span>
-              <span className="font-medium text-text-primary">{monitor?.totalChecks ?? 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Anomalies</span>
-              <span className="font-medium text-text-primary">{monitor?.totalAnomalies ?? 0}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Market Intelligence */}
-        <div className="border-b border-r border-border p-4 lg:border-b-0">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Bot className="h-3.5 w-3.5 text-info" />
-              <span className="text-xs font-bold text-text-primary">Market Intel</span>
-            </div>
-            <button onClick={handleGenerateReport} className="rounded bg-bg-secondary px-2 py-0.5 text-[10px] font-medium text-text-secondary hover:bg-bg-hover">Generate</button>
-          </div>
-          {intel ? (
-            <div className="space-y-1">
-              <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+      {/* Market Intelligence — full width */}
+      <div className="border-b border-border p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Bot className="h-4 w-4 text-info" />
+            <span className="text-sm font-bold text-text-primary">Market Intelligence</span>
+            {intel && (
+              <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${
                 intel.marketSentiment === "bullish" ? "bg-buy/10 text-buy" :
                 intel.marketSentiment === "bearish" ? "bg-sell/10 text-sell" : "bg-bg-secondary text-text-muted"
               }`}>{intel.marketSentiment}</span>
-              <p className="text-xs text-text-secondary line-clamp-2">{intel.summary || "No summary"}</p>
-              <p className="text-[10px] text-text-muted">{intel.date}</p>
+            )}
+            {intel?.date && <span className="text-xs text-text-muted">{intel.date}</span>}
+          </div>
+          <button onClick={handleGenerateReport} className="rounded-md bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover min-h-[36px]">Generate Report</button>
+        </div>
+        {intel?.summary ? (
+          <p className="text-sm text-text-secondary leading-relaxed">{intel.summary}</p>
+        ) : (
+          <p className="text-sm text-text-muted italic">No market report generated yet. Click "Generate Report" to create one.</p>
+        )}
+        {intel?.highlights && intel.highlights.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {intel.highlights.map((h, i) => (
+              <span key={i} className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+                h.impact === "positive" ? "bg-buy/10 text-buy" :
+                h.impact === "negative" ? "bg-sell/10 text-sell" : "bg-bg-secondary text-text-muted"
+              }`}>
+                {h.title}: {h.detail}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 3 operational agents — equal columns */}
+      <div className="grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-border">
+        {/* Price Monitor */}
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-accent" />
+              <span className="text-sm font-bold text-text-primary">Price Monitor</span>
             </div>
-          ) : (
-            <p className="text-xs text-text-muted">No reports yet</p>
+            <button onClick={handleTriggerMonitor} className="rounded-md bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover min-h-[36px]">Check Now</button>
+          </div>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p className="text-2xl font-bold text-accent">{monitor?.activeAlerts ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Active Alerts</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-text-primary">{monitor?.totalChecks ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Checks Run</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-text-primary">{monitor?.totalAnomalies ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Anomalies</p>
+            </div>
+          </div>
+          {monitor?.recentAlerts && monitor.recentAlerts.length > 0 && (
+            <div className="mt-3 space-y-1">
+              {monitor.recentAlerts.slice(0, 3).map((a, i) => (
+                <div key={i} className="flex items-center justify-between rounded-md bg-bg-secondary px-2.5 py-1.5 text-xs">
+                  <span className="truncate text-text-primary">{a.cardName}</span>
+                  <span className={a.type.includes("spike") || a.type === "viral" ? "font-semibold text-buy" : "font-semibold text-sell"}>
+                    {a.type === "viral" ? `${a.magnitude}x` : `${a.magnitude > 0 ? "+" : ""}${a.magnitude}%`}
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
         {/* Competitor Tracker */}
-        <div className="border-b border-r border-border p-4 sm:border-b-0">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5 text-warning" />
-              <span className="text-xs font-bold text-text-primary">Competitors</span>
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-warning" />
+              <span className="text-sm font-bold text-text-primary">Competitor Tracker</span>
             </div>
-            <button onClick={handleTriggerCompetitors} className="rounded bg-bg-secondary px-2 py-0.5 text-[10px] font-medium text-text-secondary hover:bg-bg-hover">Scan</button>
+            <button onClick={handleTriggerCompetitors} className="rounded-md bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover min-h-[36px]">Scan</button>
           </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Overpriced</span>
-              <span className="font-semibold text-sell">{competitors?.overpriced ?? 0}</span>
+          <div className="grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p className="text-2xl font-bold text-sell">{competitors?.overpriced ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Overpriced</p>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Underpriced</span>
-              <span className="font-semibold text-buy">{competitors?.underpriced ?? 0}</span>
+            <div>
+              <p className="text-2xl font-bold text-buy">{competitors?.underpriced ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Underpriced</p>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Total scans</span>
-              <span className="font-medium text-text-primary">{competitors?.totalScans ?? 0}</span>
+            <div>
+              <p className="text-2xl font-bold text-text-primary">{competitors?.totalScans ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Scans</p>
             </div>
           </div>
+          {competitors?.lastScan && (
+            <p className="mt-3 text-xs text-text-muted">Last scan: {formatTimeAgo(competitors.lastScan)}</p>
+          )}
         </div>
 
         {/* Pricing Recommendations */}
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-1.5">
-              <Shield className="h-3.5 w-3.5 text-buy" />
-              <span className="text-xs font-bold text-text-primary">Recommendations</span>
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-buy" />
+              <span className="text-sm font-bold text-text-primary">Recommendations</span>
             </div>
-            <button onClick={handleGenerateRecs} className="rounded bg-bg-secondary px-2 py-0.5 text-[10px] font-medium text-text-secondary hover:bg-bg-hover">Generate</button>
+            <button onClick={handleGenerateRecs} className="rounded-md bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover min-h-[36px]">Generate</button>
           </div>
-          <div className="space-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Pending</span>
-              <span className="font-semibold text-accent">{recs?.pendingCount ?? 0}</span>
+          <div className="grid grid-cols-2 gap-3 text-center">
+            <div>
+              <p className="text-2xl font-bold text-accent">{recs?.pendingCount ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Pending</p>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Buy / Sell / Reprice</span>
-              <span className="font-medium text-text-primary">
-                {recs?.pendingByAction?.buy ?? 0} / {recs?.pendingByAction?.sell ?? 0} / {recs?.pendingByAction?.reprice ?? 0}
-              </span>
+            <div>
+              <p className="text-2xl font-bold text-buy">{recs?.stats?.totalApproved ?? 0}</p>
+              <p className="text-[11px] text-text-muted">Approved</p>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Approved</span>
-              <span className="font-medium text-buy">{recs?.stats?.totalApproved ?? 0}</span>
+          </div>
+          {recs?.pendingCount ? (
+            <div className="mt-3 flex gap-2">
+              <span className="rounded-md bg-buy/10 px-2.5 py-1 text-xs font-medium text-buy">{recs.pendingByAction?.buy ?? 0} Buy</span>
+              <span className="rounded-md bg-sell/10 px-2.5 py-1 text-xs font-medium text-sell">{recs.pendingByAction?.sell ?? 0} Sell</span>
+              <span className="rounded-md bg-hold/10 px-2.5 py-1 text-xs font-medium text-hold">{recs.pendingByAction?.reprice ?? 0} Reprice</span>
             </div>
+          ) : null}
+          <div className="mt-2 flex gap-3 text-xs text-text-muted">
+            <span>Rejected: {recs?.stats?.totalRejected ?? 0}</span>
+            <span>Expired: {recs?.stats?.totalExpired ?? 0}</span>
           </div>
         </div>
       </div>

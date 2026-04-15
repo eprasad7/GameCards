@@ -88,7 +88,7 @@ VOLUME: ${volumeStats.totalSales7d} sales in last 7d (${volumeStats.trend})
             },
             body: JSON.stringify({
               messages: [
-                { role: "system", content: "You are a collectibles market analyst for GameStop. Write a concise daily market briefing (3-4 paragraphs) covering price movements, emerging trends, and notable events. Be specific about card names and percentages. End with a 1-sentence market outlook." },
+                { role: "system", content: "You are a collectibles market analyst for GameStop. Write a concise daily market briefing (3-4 paragraphs) covering price movements, emerging trends, and notable events. Be specific about card names and percentages. End with a 1-sentence market outlook. IMPORTANT: Write in plain text only. Do NOT use markdown, asterisks, bold, headers, or any formatting symbols." },
                 { role: "user", content: context },
               ],
             }),
@@ -98,6 +98,13 @@ VOLUME: ${volumeStats.totalSales7d} sales in last 7d (${volumeStats.trend})
         summary = aiData?.result?.choices?.[0]?.message?.content
           || aiData?.result?.response
           || "";
+        // Strip markdown formatting
+        summary = summary
+          .replace(/\*\*/g, "")
+          .replace(/\*/g, "")
+          .replace(/^#+\s/gm, "")
+          .replace(/^---+$/gm, "")
+          .trim();
       } catch (aiErr) {
         console.error("AI call failed:", aiErr);
       }
