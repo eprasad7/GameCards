@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, EvaluateRequest, EvaluateResponse } from "../types";
+import { buildPricingContext, optimizePrice } from "../services/pricing-optimizer";
 
 export const evaluateRoutes = new Hono<{ Bindings: Env }>();
 
@@ -281,4 +282,96 @@ evaluateRoutes.post("/recommendations/:id/review", async (c) => {
     .run();
 
   return c.json({ status: "updated" });
+});
+
+/**
+ * POST /v1/evaluate/advanced
+ *
+ * Level 1 demand-aware dynamic pricing.
+ * Same card, different price based on inventory, demand, competition, and events.
+ *
+ * This is what a store associate sees when a customer walks in with a card:
+ * - Should we buy it? At what price?
+ * - What should we list it at?
+ * - What's the expected profit and risk?
+ */
+evaluateRoutes.post("/advanced", async (c) => {
+  let body: { card_id: string; offered_price?: number; grade?: string; grading_company?: string; channel?: "store" | "online" | "ebay" };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
+  }
+
+  const { card_id, offered_price, grade = "RAW", grading_company = "RAW", channel = "store" } = body;
+  if (!card_id) return c.json({ error: "card_id required" }, 400);
+
+  // Get ML prediction
+  const prediction = await c.env.DB.prepare(
+    `SELECT * FROM model_predictions WHERE card_id = ? AND grade = ? AND grading_company = ? ORDER BY predicted_at DESC LIMIT 1`
+  ).bind(card_id, grade, grading_company).first();
+
+  if (!prediction) return c.json({ error: "No prediction available for this card" }, 404);
+
+  const fairValue = prediction.fair_value as number;
+  const confidence = prediction.confidence as "HIGH" | "MEDIUM" | "LOW";
+
+  // Build full pricing context from D1
+  const ctx = await buildPricingContext(c.env, card_id, grade, grading_company, fairValue, confidence, channel);
+
+  // Run pricing optimizer
+  const optimized = optimizePrice(ctx);
+
+  // Card name
+  const card = await c.env.DB.prepare(`SELECT name FROM card_catalog WHERE id = ?`).bind(card_id).first();
+
+  // Trade-in decision (if offered_price provided)
+  let tradeInDecision: string | null = null;
+  let tradeInReasoning: string | null = null;
+  if (offered_price != null && offered_price > 0) {
+    if (optimized.holdRecommendation) {
+      tradeInDecision = "HOLD";
+      tradeInReasoning = optimized.holdReason;
+    } else if (offered_price <= optimized.tradeInOffer) {
+      tradeInDecision = optimized.riskScore === "high" ? "REVIEW_BUY" : "BUY";
+      tradeInReasoning = `Offered $${offered_price.toFixed(2)} is ${offered_price < optimized.tradeInOffer ? "below" : "at"} our max offer of $${optimized.tradeInOffer.toFixed(2)}. Expected profit: $${(optimized.listPrice * (channel === "store" ? 1 : 0.87) - offered_price).toFixed(2)} in ~${optimized.expectedDaysToSell} days.`;
+    } else {
+      tradeInDecision = "DECLINE";
+      tradeInReasoning = `Offered $${offered_price.toFixed(2)} exceeds our max offer of $${optimized.tradeInOffer.toFixed(2)}. Unprofitable at this price.`;
+    }
+  }
+
+  return c.json({
+    card_id,
+    card_name: (card?.name as string) || card_id,
+    grade,
+    grading_company,
+    channel,
+
+    // ML prediction
+    fair_value: fairValue,
+    confidence,
+
+    // Optimized pricing
+    list_price: optimized.listPrice,
+    trade_in_offer: optimized.tradeInOffer,
+    adjustments: optimized.adjustments,
+
+    // Risk
+    risk_score: optimized.riskScore,
+    expected_days_to_sell: optimized.expectedDaysToSell,
+    expected_profit: optimized.expectedProfit,
+    worst_case_exit: optimized.worstCaseExit,
+
+    // Hold signal
+    hold: optimized.holdRecommendation,
+    hold_reason: optimized.holdReason,
+
+    // Trade-in decision (if offered_price provided)
+    trade_in: offered_price != null ? {
+      offered_price,
+      decision: tradeInDecision,
+      reasoning: tradeInReasoning,
+    } : null,
+  });
 });
