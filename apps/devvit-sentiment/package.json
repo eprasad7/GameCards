@@ -1,0 +1,17 @@
+{
+  "name": "gamecards-sentiment",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "devvit playtest",
+    "upload": "devvit upload",
+    "install": "devvit install"
+  },
+  "dependencies": {
+    "@devvit/public-api": "0.12.19"
+  },
+  "devDependencies": {
+    "@devvit/tsconfig": "0.12.19"
+  }
+}

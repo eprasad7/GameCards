@@ -1,0 +1,4 @@
+name: gamecards-sentiment
+version: 0.0.1
+slug: gamecards-sentiment
+description: Collects card mentions and sentiment from trading card subreddits for the GameCards pricing engine.
