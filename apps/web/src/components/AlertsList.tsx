@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { AlertTriangle, TrendingUp, TrendingDown, Zap, Eye, X, Clock, ChevronRight, Filter } from "lucide-react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { AlertTriangle, TrendingUp, TrendingDown, Zap, Eye, X, Clock, ChevronRight, UserPlus, CheckCircle2 } from "lucide-react";
 import { TrustBadge } from "./TrustBadge";
 import type { Alert } from "../lib/api";
 import { api } from "../lib/api";
@@ -25,11 +25,13 @@ const alertIcons: Record<string, React.ReactNode> = {
 };
 
 const SNOOZE_OPTIONS = [
-  { label: "1h", minutes: 60 },
-  { label: "4h", minutes: 240 },
-  { label: "24h", minutes: 1440 },
-  { label: "7d", minutes: 10080 },
+  { label: "1 hour", minutes: 60 },
+  { label: "4 hours", minutes: 240 },
+  { label: "24 hours", minutes: 1440 },
+  { label: "7 days", minutes: 10080 },
 ];
+
+const ASSIGNEES = ["Me", "Team Lead", "Pricing", "Review Queue"];
 
 function getSeverity(alert: Alert): "critical" | "warning" | "info" {
   if (alert.magnitude >= 2 || alert.alert_type === "anomaly_detected") return "critical";
@@ -39,36 +41,35 @@ function getSeverity(alert: Alert): "critical" | "warning" | "info" {
 
 const severityOrder = { critical: 0, warning: 1, info: 2 };
 const severityStyles = {
-  critical: { badge: "bg-sell/10 text-sell border-sell/20", dot: "bg-sell", label: "Critical" },
-  warning: { badge: "bg-hold/10 text-hold border-hold/20", dot: "bg-hold", label: "Warning" },
-  info: { badge: "bg-info/10 text-info border-info/20", dot: "bg-info", label: "Info" },
+  critical: { dot: "bg-sell", label: "Critical", border: "border-sell/25" },
+  warning: { dot: "bg-hold", label: "Warning", border: "border-hold/25" },
+  info: { dot: "bg-info", label: "Info", border: "border-border" },
 };
 
 export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showControls = true }: AlertsListProps) {
   const [sortMode, setSortMode] = useState<SortMode>("severity");
   const [filterType, setFilterType] = useState<FilterType>("all");
-  const [snoozeMenuId, setSnoozeMenuId] = useState<number | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<{ id: number; type: "snooze" | "assign" } | null>(null);
   const [pendingAction, setPendingAction] = useState<number | null>(null);
 
   const handleSnooze = async (alertId: number, durationMinutes: number) => {
     setPendingAction(alertId);
-    setSnoozeMenuId(null);
+    setOpenMenuId(null);
     try {
       await api.snoozeAlert(alertId, durationMinutes);
       onRefresh?.();
     } catch {
-      // Snooze failed — alert stays visible
+      // Snooze failed
     } finally {
       setPendingAction(null);
     }
   };
 
-  const handleAssign = async (alertId: number) => {
-    const name = prompt("Assign to:");
-    if (!name) return;
+  const handleAssign = async (alertId: number, assignee: string) => {
     setPendingAction(alertId);
+    setOpenMenuId(null);
     try {
-      await api.assignAlert(alertId, name);
+      await api.assignAlert(alertId, assignee);
       onRefresh?.();
     } catch {
       // Assign failed
@@ -100,9 +101,10 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
 
   if (alerts.length === 0) {
     return (
-      <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-lg border border-border bg-bg-card shadow-sm">
-        <p className="text-sm text-text-muted">No active alerts</p>
-        <p className="text-xs text-text-muted">The system will notify you when something needs attention</p>
+      <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-xl border border-border bg-bg-card shadow-sm">
+        <CheckCircle2 className="h-6 w-6 text-buy" />
+        <p className="text-sm font-medium text-text-primary">All clear</p>
+        <p className="text-xs text-text-muted">No active alerts right now</p>
       </div>
     );
   }
@@ -114,15 +116,15 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {showControls && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-md bg-bg-secondary p-0.5">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-0.5 rounded-lg bg-bg-secondary p-1">
             {(["severity", "newest", "type"] as SortMode[]).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setSortMode(mode)}
-                className={`rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors min-h-[32px] ${
+                className={`rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors min-h-[32px] ${
                   sortMode === mode ? "bg-bg-card text-text-primary shadow-sm" : "text-text-muted hover:text-text-primary"
                 }`}
               >
@@ -131,34 +133,37 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Filter className="h-3.5 w-3.5 text-text-muted" />
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as FilterType)}
-              className="rounded-md border border-border bg-bg-primary px-2 py-1 text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <option value="all">All types</option>
-              <option value="price_spike">Price spikes</option>
-              <option value="price_crash">Price crashes</option>
-              <option value="viral_social">Viral social</option>
-              <option value="anomaly_detected">Anomalies</option>
-              <option value="new_high">New highs</option>
-              <option value="new_low">New lows</option>
-            </select>
-          </div>
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value as FilterType)}
+            className="rounded-lg border border-border bg-bg-primary px-3 py-1.5 text-xs text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <option value="all">All types</option>
+            <option value="price_spike">Price spikes</option>
+            <option value="price_crash">Price crashes</option>
+            <option value="viral_social">Viral social</option>
+            <option value="anomaly_detected">Anomalies</option>
+            <option value="new_high">New highs</option>
+            <option value="new_low">New lows</option>
+          </select>
 
-          <div className="ml-auto flex items-center gap-2 text-xs text-text-muted">
+          <div className="ml-auto flex items-center gap-3 text-xs">
             {grouped.critical.length > 0 && (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1.5 font-medium text-sell">
                 <span className="h-2 w-2 rounded-full bg-sell" />
                 {grouped.critical.length} critical
               </span>
             )}
             {grouped.warning.length > 0 && (
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1.5 text-text-muted">
                 <span className="h-2 w-2 rounded-full bg-hold" />
                 {grouped.warning.length} warning
+              </span>
+            )}
+            {grouped.info.length > 0 && (
+              <span className="flex items-center gap-1.5 text-text-muted">
+                <span className="h-2 w-2 rounded-full bg-info" />
+                {grouped.info.length} info
               </span>
             )}
           </div>
@@ -166,28 +171,27 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
       )}
 
       {sortMode === "severity" ? (
-        <>
+        <div className="space-y-5">
           {grouped.critical.length > 0 && (
-            <AlertGroup severity="critical" alerts={grouped.critical} onResolve={onResolve} onCardClick={onCardClick} snoozeMenuId={snoozeMenuId} setSnoozeMenuId={setSnoozeMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
+            <AlertGroup severity="critical" alerts={grouped.critical} onResolve={onResolve} onCardClick={onCardClick} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
           )}
           {grouped.warning.length > 0 && (
-            <AlertGroup severity="warning" alerts={grouped.warning} onResolve={onResolve} onCardClick={onCardClick} snoozeMenuId={snoozeMenuId} setSnoozeMenuId={setSnoozeMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
+            <AlertGroup severity="warning" alerts={grouped.warning} onResolve={onResolve} onCardClick={onCardClick} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
           )}
           {grouped.info.length > 0 && (
-            <AlertGroup severity="info" alerts={grouped.info} onResolve={onResolve} onCardClick={onCardClick} snoozeMenuId={snoozeMenuId} setSnoozeMenuId={setSnoozeMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
+            <AlertGroup severity="info" alerts={grouped.info} onResolve={onResolve} onCardClick={onCardClick} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onSnooze={handleSnooze} onAssign={handleAssign} pendingAction={pendingAction} />
           )}
-        </>
+        </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-bg-card shadow-sm">
-          {visibleAlerts.map((alert, i) => (
+        <div className="overflow-hidden rounded-xl border border-border bg-bg-card shadow-sm">
+          {visibleAlerts.map((alert) => (
             <AlertRow
               key={alert.id}
               alert={alert}
-              isLast={i === visibleAlerts.length - 1}
               onResolve={onResolve}
               onCardClick={onCardClick}
-              snoozeMenuId={snoozeMenuId}
-              setSnoozeMenuId={setSnoozeMenuId}
+              openMenuId={openMenuId}
+              setOpenMenuId={setOpenMenuId}
               onSnooze={handleSnooze}
               onAssign={handleAssign}
               pendingAction={pendingAction}
@@ -197,7 +201,7 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
       )}
 
       {visibleAlerts.length === 0 && alerts.length > 0 && (
-        <div className="flex h-20 items-center justify-center rounded-lg border border-border bg-bg-card text-sm text-text-muted">
+        <div className="flex h-20 items-center justify-center rounded-xl border border-border bg-bg-card text-sm text-text-muted">
           All alerts filtered
         </div>
       )}
@@ -205,54 +209,44 @@ export function AlertsList({ alerts, onResolve, onRefresh, onCardClick, showCont
   );
 }
 
-function AlertGroup({ severity, alerts, onResolve, onCardClick, snoozeMenuId, setSnoozeMenuId, onSnooze, onAssign, pendingAction }: {
+function AlertGroup({ severity, alerts, ...rowProps }: {
   severity: "critical" | "warning" | "info";
   alerts: Alert[];
   onResolve: (id: number) => void;
   onCardClick?: (cardId: string) => void;
-  snoozeMenuId: number | null;
-  setSnoozeMenuId: (id: number | null) => void;
+  openMenuId: { id: number; type: string } | null;
+  setOpenMenuId: (v: { id: number; type: "snooze" | "assign" } | null) => void;
   onSnooze: (id: number, minutes: number) => void;
-  onAssign: (id: number) => void;
+  onAssign: (id: number, assignee: string) => void;
   pendingAction: number | null;
 }) {
   const style = severityStyles[severity];
   return (
-    <div className={`overflow-hidden rounded-lg border bg-bg-card shadow-sm ${
-      severity === "critical" ? "border-sell/30" : severity === "warning" ? "border-hold/30" : "border-border"
-    }`}>
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className={`overflow-hidden rounded-xl border bg-bg-card shadow-sm ${style.border}`}>
+      <div className="flex items-center gap-2 px-5 py-2.5">
         <span className={`h-2 w-2 rounded-full ${style.dot}`} />
         <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">{style.label}</span>
-        <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${style.badge}`}>{alerts.length}</span>
+        <span className="text-xs text-text-muted">{alerts.length}</span>
       </div>
-      {alerts.map((alert, i) => (
+      {alerts.map((alert) => (
         <AlertRow
           key={alert.id}
           alert={alert}
-          isLast={i === alerts.length - 1}
-          onResolve={onResolve}
-          onCardClick={onCardClick}
-          snoozeMenuId={snoozeMenuId}
-          setSnoozeMenuId={setSnoozeMenuId}
-          onSnooze={onSnooze}
-          onAssign={onAssign}
-          pendingAction={pendingAction}
+          {...rowProps}
         />
       ))}
     </div>
   );
 }
 
-function AlertRow({ alert, isLast, onResolve, onCardClick, snoozeMenuId, setSnoozeMenuId, onSnooze, onAssign, pendingAction }: {
+function AlertRow({ alert, onResolve, onCardClick, openMenuId, setOpenMenuId, onSnooze, onAssign, pendingAction }: {
   alert: Alert;
-  isLast: boolean;
   onResolve: (id: number) => void;
   onCardClick?: (cardId: string) => void;
-  snoozeMenuId: number | null;
-  setSnoozeMenuId: (id: number | null) => void;
+  openMenuId: { id: number; type: string } | null;
+  setOpenMenuId: (v: { id: number; type: "snooze" | "assign" } | null) => void;
   onSnooze: (id: number, minutes: number) => void;
-  onAssign: (id: number) => void;
+  onAssign: (id: number, assignee: string) => void;
   pendingAction: number | null;
 }) {
   const severity = getSeverity(alert);
@@ -260,90 +254,129 @@ function AlertRow({ alert, isLast, onResolve, onCardClick, snoozeMenuId, setSnoo
   const ageLabel = age < 3600_000 ? `${Math.round(age / 60_000)}m ago` : age < 86400_000 ? `${Math.round(age / 3600_000)}h ago` : `${Math.round(age / 86400_000)}d ago`;
   const isPending = pendingAction === alert.id;
 
+  const isSnoozeOpen = openMenuId?.id === alert.id && openMenuId.type === "snooze";
+  const isAssignOpen = openMenuId?.id === alert.id && openMenuId.type === "assign";
+
   return (
-    <div className={`relative flex items-start gap-3 p-4 transition-colors hover:bg-bg-hover ${!isLast ? "border-b border-border" : ""} ${isPending ? "opacity-50" : ""}`}>
+    <div className={`flex items-start gap-4 border-t border-border px-5 py-4 transition-colors hover:bg-bg-hover ${isPending ? "opacity-40 pointer-events-none" : ""}`}>
+      {/* Icon */}
       <div className="mt-0.5 shrink-0">
         {alertIcons[alert.alert_type] || <Eye className="h-4 w-4 text-text-muted" />}
       </div>
+
+      {/* Content: what happened + why */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           {onCardClick ? (
-            <button
-              onClick={() => onCardClick(alert.card_id)}
-              className="text-sm font-semibold text-text-primary truncate hover:text-accent"
-            >
+            <button onClick={() => onCardClick(alert.card_id)} className="text-sm font-semibold text-text-primary truncate hover:text-accent">
               {alert.card_name}
             </button>
           ) : (
             <span className="text-sm font-semibold text-text-primary truncate">{alert.card_name}</span>
           )}
-          <span className="shrink-0 rounded-sm bg-bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-text-muted">
+          <span className="shrink-0 rounded bg-bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-text-muted">
             {alert.alert_type.replace(/_/g, " ")}
           </span>
           {severity === "critical" && <TrustBadge variant="manual-review" />}
-          {alert.magnitude >= 2.5 && <TrustBadge variant="sentiment-spike" detail={`${alert.magnitude.toFixed(1)}x magnitude`} />}
           {alert.assigned_to && (
-            <span className="rounded-sm bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info">{alert.assigned_to}</span>
+            <span className="rounded bg-info/10 px-1.5 py-0.5 text-[11px] font-medium text-info">{alert.assigned_to}</span>
           )}
         </div>
-        <p className="mt-0.5 text-sm text-text-secondary">{alert.message}</p>
-        <p className="mt-0.5 text-xs text-text-muted">{ageLabel}</p>
+        <p className="mt-1 text-sm text-text-secondary leading-relaxed">{alert.message}</p>
+        <p className="mt-1 text-xs text-text-muted">{ageLabel}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
+
+      {/* Action rail — pill buttons with labels */}
+      <div className="flex shrink-0 items-center gap-1.5 mt-0.5">
         {/* Assign */}
-        <button
-          onClick={() => onAssign(alert.id)}
-          className="rounded-md p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary min-h-[36px] min-w-[36px] flex items-center justify-center text-[11px] font-medium"
-          aria-label="Assign alert"
-          title="Assign"
-        >
-          @
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setOpenMenuId(isAssignOpen ? null : { id: alert.id, type: "assign" })}
+            className="flex items-center gap-1 rounded-lg bg-bg-secondary px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary min-h-[32px]"
+          >
+            <UserPlus className="h-3 w-3" />
+            <span className="hidden sm:inline">Assign</span>
+          </button>
+          {isAssignOpen && (
+            <Popover onClose={() => setOpenMenuId(null)}>
+              {ASSIGNEES.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => onAssign(alert.id, name)}
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary min-h-[36px]"
+                >
+                  {name}
+                </button>
+              ))}
+            </Popover>
+          )}
+        </div>
 
         {/* Snooze */}
         <div className="relative">
           <button
-            onClick={() => setSnoozeMenuId(snoozeMenuId === alert.id ? null : alert.id)}
-            className="rounded-md p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary min-h-[36px] min-w-[36px] flex items-center justify-center"
-            aria-label="Snooze alert"
+            onClick={() => setOpenMenuId(isSnoozeOpen ? null : { id: alert.id, type: "snooze" })}
+            className="flex items-center gap-1 rounded-lg bg-bg-secondary px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary min-h-[32px]"
           >
-            <Clock className="h-3.5 w-3.5" />
+            <Clock className="h-3 w-3" />
+            <span className="hidden sm:inline">Snooze</span>
           </button>
-          {snoozeMenuId === alert.id && (
-            <div className="absolute right-0 top-full z-10 mt-1 rounded-md border border-border bg-bg-card p-1 shadow-lg">
+          {isSnoozeOpen && (
+            <Popover onClose={() => setOpenMenuId(null)}>
               {SNOOZE_OPTIONS.map((opt) => (
                 <button
                   key={opt.label}
                   onClick={() => onSnooze(alert.id, opt.minutes)}
-                  className="block w-full rounded px-3 py-1.5 text-left text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary min-h-[32px]"
+                  className="block w-full rounded-md px-3 py-2 text-left text-xs font-medium text-text-secondary hover:bg-bg-hover hover:text-text-primary min-h-[36px]"
                 >
-                  Snooze {opt.label}
+                  {opt.label}
                 </button>
               ))}
-            </div>
+            </Popover>
           )}
         </div>
 
-        {/* Open card */}
+        {/* Investigate */}
         {onCardClick && (
           <button
             onClick={() => onCardClick(alert.card_id)}
-            className="rounded-md p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary min-h-[36px] min-w-[36px] flex items-center justify-center"
-            aria-label="View card"
+            className="flex items-center gap-1 rounded-lg bg-bg-secondary px-2.5 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary min-h-[32px]"
           >
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3 w-3" />
+            <span className="hidden sm:inline">View</span>
           </button>
         )}
 
         {/* Resolve */}
         <button
           onClick={() => onResolve(alert.id)}
-          className="rounded-md p-2 text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary min-h-[36px] min-w-[36px] flex items-center justify-center"
-          aria-label="Resolve alert"
+          className="flex items-center gap-1 rounded-lg bg-buy/10 px-2.5 py-1.5 text-xs font-medium text-buy transition-colors hover:bg-buy/20 min-h-[32px]"
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-3 w-3" />
+          <span className="hidden sm:inline">Resolve</span>
         </button>
       </div>
+    </div>
+  );
+}
+
+/* ─── Popover ─── */
+function Popover({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="absolute right-0 top-full z-20 mt-1.5 min-w-[140px] rounded-xl border border-border bg-bg-card p-1.5 shadow-xl">
+      {children}
     </div>
   );
 }

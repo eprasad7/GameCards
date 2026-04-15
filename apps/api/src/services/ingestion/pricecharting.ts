@@ -31,13 +31,38 @@ interface PriceChartingSearchResponse {
 /** Map PriceCharting console names to our category enum */
 function mapCategory(consoleName: string): string {
   const lower = consoleName.toLowerCase();
+  // Pokemon
   if (lower.includes("pokemon")) return "pokemon";
-  if (lower.includes("baseball")) return "sports_baseball";
-  if (lower.includes("basketball")) return "sports_basketball";
-  if (lower.includes("football")) return "sports_football";
-  if (lower.includes("hockey")) return "sports_hockey";
+  // Baseball — Topps, Bowman, Donruss, Fleer, Upper Deck baseball sets
+  if (lower.includes("baseball") || lower.includes("topps") && !lower.includes("star wars") ||
+      lower.includes("bowman") || lower.includes("donruss baseball") ||
+      lower.includes("fleer baseball") || lower.includes("upper deck baseball")) return "sports_baseball";
+  // Basketball — Prizm, Panini, Hoops, NBA
+  if (lower.includes("basketball") || lower.includes("hoops") ||
+      lower.includes("nba") || lower.includes("panini prizm") && !lower.includes("football") && !lower.includes("soccer")) return "sports_basketball";
+  // Football — NFL, Panini football, Score football
+  if (lower.includes("football") || lower.includes("nfl") ||
+      lower.includes("score football") || lower.includes("panini football")) return "sports_football";
+  if (lower.includes("hockey") || lower.includes("nhl")) return "sports_hockey";
+  // TCG
   if (lower.includes("magic") || lower.includes("mtg")) return "tcg_mtg";
   if (lower.includes("yu-gi-oh") || lower.includes("yugioh")) return "tcg_yugioh";
+  // Sports catch-all: Prizm, Panini, Topps Chrome, Select, Mosaic
+  if (lower.includes("prizm") || lower.includes("panini") || lower.includes("select") ||
+      lower.includes("mosaic") || lower.includes("chronicles") || lower.includes("optic")) {
+    // Guess based on common patterns
+    if (lower.includes("nfl") || lower.includes("football")) return "sports_football";
+    if (lower.includes("nba") || lower.includes("basketball")) return "sports_basketball";
+    if (lower.includes("mlb") || lower.includes("baseball")) return "sports_baseball";
+    return "sports_football"; // Prizm defaults to football (most common)
+  }
+  // Topps Chrome without "star wars" = likely baseball
+  if (lower.includes("topps chrome") && !lower.includes("star wars")) return "sports_baseball";
+  if (lower.includes("topps") && !lower.includes("star wars") && !lower.includes("garbage")) return "sports_baseball";
+  // Funko POP sports
+  if (lower.includes("funko pop nfl")) return "sports_football";
+  if (lower.includes("funko pop mlb")) return "sports_baseball";
+  if (lower.includes("funko pop nba")) return "sports_basketball";
   return "other";
 }
 
