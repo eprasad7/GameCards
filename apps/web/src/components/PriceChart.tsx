@@ -115,7 +115,7 @@ export function PriceChart({ sales, fairValue, buyThreshold, sellThreshold, onRa
               fontSize: 13,
               boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
             }}
-            formatter={(value: number) => [`$${value.toFixed(2)}`, "Price"]}
+            formatter={(value) => [`$${Number(value).toFixed(2)}`, "Price"]}
           />
           {fairValue && (
             <ReferenceLine y={fairValue} stroke="var(--color-info)" strokeDasharray="4 4"
@@ -146,7 +146,7 @@ export function PriceChart({ sales, fairValue, buyThreshold, sellThreshold, onRa
                 color: "var(--color-text-primary)",
                 fontSize: 12,
               }}
-              formatter={(value: number) => [`${value} sale${value !== 1 ? "s" : ""}`, "Volume"]}
+              formatter={(value) => [`${value} sale${Number(value) !== 1 ? "s" : ""}`, "Volume"]}
             />
             <Bar dataKey="volume" fill="var(--color-accent)" opacity={0.3} radius={[2, 2, 0, 0]} />
           </BarChart>

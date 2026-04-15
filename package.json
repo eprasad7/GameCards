@@ -2,12 +2,15 @@
   "name": "gamecards",
   "private": true,
   "scripts": {
+    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
     "dev:api": "pnpm --filter api dev",
     "dev:web": "pnpm --filter web dev",
-    "deploy:api": "pnpm --filter api deploy",
+    "deploy:api": "pnpm --filter api run deploy:prod",
     "deploy:web": "pnpm --filter web deploy",
     "db:migrate": "pnpm --filter api db:migrate",
-    "typecheck": "pnpm -r typecheck"
+    "db:migrate:prod": "pnpm --filter api db:migrate:prod",
+    "typecheck": "pnpm -r typecheck",
+    "ci": "pnpm typecheck"
   },
   "engines": {
     "node": ">=20"

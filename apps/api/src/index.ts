@@ -29,12 +29,14 @@ app.use("*", logger());
 app.use("/v1/*", apiKeyAuth);
 app.use("/v1/*", rateLimiter);
 
-// Health check
+// Health check — always public, shows environment info
 app.get("/", (c) =>
   c.json({
     service: "GameCards Dynamic Pricing Engine",
     version: "1.0.0",
     status: "healthy",
+    environment: c.env.ENVIRONMENT || "unknown",
+    auth: c.env.ENVIRONMENT === "development" ? "bypassed" : "required",
     agents: ["price-monitor", "market-intelligence", "competitor-tracker", "pricing-recommendation"],
   })
 );

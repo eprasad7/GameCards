@@ -4,9 +4,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "deploy:prod": "wrangler deploy --env production",
     "typecheck": "tsc --noEmit",
     "db:migrate": "wrangler d1 migrations apply gamecards-db --local",
-    "db:migrate:prod": "wrangler d1 migrations apply gamecards-db --remote"
+    "db:migrate:prod": "wrangler d1 migrations apply gamecards-db --remote --env production"
   },
   "dependencies": {
     "agents": "^0.11.0",
