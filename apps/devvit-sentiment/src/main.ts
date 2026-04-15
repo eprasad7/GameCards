@@ -1,10 +1,10 @@
 import { Devvit } from "@devvit/public-api";
 
 /**
- * GameCards Sentiment Collector
+ * GMEstart Sentiment Collector
  *
  * A Devvit app that runs inside Reddit and pushes trading card
- * post data to the GameCards pricing engine API.
+ * post data to the GMEstart pricing engine API.
  *
  * Two data collection paths:
  * 1. Real-time: triggers on new posts in installed subreddits
@@ -14,9 +14,9 @@ import { Devvit } from "@devvit/public-api";
  *             r/footballcards, r/PKMNTCGDeals, r/sportscards
  */
 
-// API endpoint for the GameCards pricing engine
+// API endpoint for the GMEstart pricing engine
 const API_URL = "https://api.gmestart.com/v1/ingest/sentiment";
-const API_KEY = "gamecards-demo-key-2026"; // TODO: move to app settings
+const API_KEY = "gmestart-demo-key-2026"; // TODO: move to app settings
 
 // ─── Real-time Trigger: New Posts ───
 
@@ -58,7 +58,7 @@ Devvit.addTrigger({
         console.error(`API error: ${response.status}`);
       }
     } catch (err) {
-      console.error("Failed to send post to GameCards API:", err);
+      console.error("Failed to send post to GMEstart API:", err);
     }
   },
 });
@@ -122,7 +122,7 @@ Devvit.addTrigger({
       name: "batch-collect-posts",
       cron: "*/5 * * * *",
     });
-    console.log("GameCards sentiment collector installed and scheduled.");
+    console.log("GMEstart sentiment collector installed and scheduled.");
   },
 });
 

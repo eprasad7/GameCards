@@ -38,9 +38,9 @@ export function SignIn({ onAuthenticated }: SignInProps) {
       }
 
       // Store session token (used as X-API-Key for subsequent requests)
-      localStorage.setItem("gamecards_authenticated", "true");
-      localStorage.setItem("gamecards_api_key", data.token);
-      localStorage.setItem("gamecards_session_expires", data.expiresAt || "");
+      localStorage.setItem("gmestart_authenticated", "true");
+      localStorage.setItem("gmestart_api_key", data.token);
+      localStorage.setItem("gmestart_session_expires", data.expiresAt || "");
       onAuthenticated();
     } catch {
       setError("Unable to connect to the server");
@@ -59,7 +59,7 @@ export function SignIn({ onAuthenticated }: SignInProps) {
             </div>
           </div>
           <h1 className="text-2xl font-extrabold text-text-inverse">
-            Game<span className="text-accent">Cards</span>
+            GME<span className="text-accent">start</span>
           </h1>
           <p className="mt-1 text-sm text-text-inverse/50">
             Dynamic Pricing Engine

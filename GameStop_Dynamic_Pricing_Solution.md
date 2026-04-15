@@ -787,11 +787,11 @@ The `packages/ml-training` Python package provides these CLI commands:
 
 | Command | Purpose |
 |---------|---------|
-| `gamecards-export-features` | Export features + training data from D1 via HTTP API |
-| `gamecards-train` | Train LightGBM quantile models |
-| `gamecards-export` | Export trained models to ONNX format |
-| `gamecards-backtest` | Walk-forward backtesting |
-| `gamecards-score` | Batch score all cards, upload predictions to R2 |
+| `gmestart-export-features` | Export features + training data from D1 via HTTP API |
+| `gmestart-train` | Train LightGBM quantile models |
+| `gmestart-export` | Export trained models to ONNX format |
+| `gmestart-backtest` | Walk-forward backtesting |
+| `gmestart-score` | Batch score all cards, upload predictions to R2 |
 
 **Automated retraining:** GitHub Actions workflow runs weekly (Sunday 2 AM UTC): export features from D1 -> train -> ONNX export -> batch score -> upload predictions to R2 -> Worker picks up within 10 minutes.
 

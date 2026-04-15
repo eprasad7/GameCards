@@ -1,6 +1,6 @@
 # Infrastructure Costs
 
-Estimated monthly Cloudflare costs for the GameCards Dynamic Pricing Engine, based on current [Cloudflare pricing](https://developers.cloudflare.com/workers/platform/pricing/) as of April 2026.
+Estimated monthly Cloudflare costs for the GMEstart Dynamic Pricing Engine, based on current [Cloudflare pricing](https://developers.cloudflare.com/workers/platform/pricing/) as of April 2026.
 
 All estimates assume the **Workers Paid plan** ($5/mo base) and a catalog of **~5,000 cards** with active price tracking.
 
@@ -250,7 +250,7 @@ The Cloudflare architecture is 25-80x cheaper for infrastructure at this scale, 
 
 For development and low-traffic testing, the Workers Free plan covers:
 
-| Service | Free Limit | GameCards Dev Usage | Fits? |
+| Service | Free Limit | GMEstart Dev Usage | Fits? |
 |---------|-----------|-------------------|-------|
 | Workers | 100K req/day | ~5K/day | Yes |
 | D1 | 5M reads + 100K writes/day | ~1.7M reads + ~17K writes/day | Yes |

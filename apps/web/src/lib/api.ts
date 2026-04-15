@@ -7,7 +7,7 @@ const API_BASE = import.meta.env.VITE_API_URL
 // In development (Vite proxy), auth is bypassed server-side.
 function getApiKey(): string | undefined {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("gamecards_api_key") || undefined;
+    return localStorage.getItem("gmestart_api_key") || undefined;
   }
   return undefined;
 }

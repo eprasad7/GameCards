@@ -131,7 +131,7 @@ function AppShell() {
         <div className="flex h-14 items-center gap-4 px-6 lg:px-10">
           <button onClick={() => navigate("/")} className="flex items-center gap-2">
             <span className="text-xl font-extrabold tracking-tight text-text-inverse">
-              Game<span className="text-accent">Cards</span>
+              GME<span className="text-accent">start</span>
             </span>
             <span className="hidden rounded-sm bg-accent px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-text-inverse sm:block">
               Pricing Engine
@@ -286,7 +286,7 @@ function AppShell() {
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(
-    () => localStorage.getItem("gamecards_authenticated") === "true"
+    () => localStorage.getItem("gmestart_authenticated") === "true"
   );
 
   if (!authenticated) {

@@ -1,4 +1,4 @@
-# GameCards Dynamic Pricing Engine
+# GMEstart Dynamic Pricing Engine
 
 A real-time dynamic pricing engine for collectible trading cards (Pokemon, sports, TCG) built on Cloudflare Workers. Combines multi-source market data, social sentiment analysis, ML-based price prediction with uncertainty quantification, and anomaly detection.
 
@@ -91,7 +91,7 @@ cd packages/ml-training
 pip install -e .
 
 # Export features and training data from D1
-gamecards-export-features \
+gmestart-export-features \
   --account-id YOUR_CF_ACCOUNT_ID \
   --database-id YOUR_D1_DATABASE_ID \
   --api-token YOUR_CF_API_TOKEN \
@@ -99,16 +99,16 @@ gamecards-export-features \
   --output-training training_data.csv
 
 # Train models
-gamecards-train --data training_data.csv --output models/
+gmestart-train --data training_data.csv --output models/
 
 # Walk-forward backtest
-gamecards-backtest --data training_data.csv
+gmestart-backtest --data training_data.csv
 
 # Export to ONNX and upload to R2
-gamecards-export --model-dir models/ --output onnx_models/ --upload
+gmestart-export --model-dir models/ --output onnx_models/ --upload
 
 # Batch-score all cards and upload to R2
-gamecards-score --model-dir models/ --features features.csv --upload
+gmestart-score --model-dir models/ --features features.csv --upload
 
 # Or run the full pipeline in one shot:
 ./scripts/run_pipeline.sh training_data.csv features.csv

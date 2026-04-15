@@ -56,7 +56,7 @@ export async function ingestRedditSentiment(env: Env): Promise<number> {
         {
           headers: {
             Authorization: `Bearer ${token}`,
-            "User-Agent": "GameCards:1.0.0 (by /u/gamecards-bot)",
+            "User-Agent": "GMEstart:1.0.0 (by /u/gmestart-bot)",
           },
         }
       );
@@ -112,7 +112,7 @@ async function getRedditToken(env: Env): Promise<string | null> {
       headers: {
         Authorization: `Basic ${credentials}`,
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "GameCards:1.0.0 (by /u/gamecards-bot)",
+        "User-Agent": "GMEstart:1.0.0 (by /u/gmestart-bot)",
       },
       body: "grant_type=client_credentials",
     });

@@ -7,11 +7,11 @@ export default defineConfig({
   server: {
     proxy: {
       "/v1": {
-        target: process.env.API_URL || "https://gamecards-api.servesys.workers.dev",
+        target: process.env.API_URL || "https://gmestart-api.servesys.workers.dev",
         changeOrigin: true,
       },
       "/agents": {
-        target: process.env.API_URL || "https://gamecards-api.servesys.workers.dev",
+        target: process.env.API_URL || "https://gmestart-api.servesys.workers.dev",
         changeOrigin: true,
         ws: true,
       },

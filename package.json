@@ -1,5 +1,5 @@
 {
-  "name": "gamecards",
+  "name": "gmestart",
   "private": true,
   "scripts": {
     "dev": "pnpm dev:api & pnpm dev:web",

@@ -33,7 +33,7 @@ GET /
 **Response** `200`
 ```json
 {
-  "service": "GameCards Dynamic Pricing Engine",
+  "service": "GMEstart Dynamic Pricing Engine",
   "version": "1.0.0",
   "status": "healthy"
 }

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-GameCards runs entirely on Cloudflare's platform: a single Worker handles the API, scheduled data ingestion, and queue-based async processing. The ML training pipeline runs separately in Python and uploads model artifacts to R2.
+GMEstart runs entirely on Cloudflare's platform: a single Worker handles the API, scheduled data ingestion, and queue-based async processing. The ML training pipeline runs separately in Python and uploads model artifacts to R2.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐

@@ -259,20 +259,20 @@ cd packages/ml-training
 # For now, prepare a CSV with columns matching config.feature_columns + price_usd + sale_date
 
 # Train
-gamecards-train --data training_data.csv --output models/
+gmestart-train --data training_data.csv --output models/
 
 # Backtest
-gamecards-backtest --data training_data.csv --output backtest_results.json
+gmestart-backtest --data training_data.csv --output backtest_results.json
 
 # Export ONNX artifacts and upload to R2
-gamecards-export --model-dir models/ --output onnx_models/ --upload \
+gmestart-export --model-dir models/ --output onnx_models/ --upload \
   --r2-endpoint https://<account_id>.r2.cloudflarestorage.com \
   --r2-access-key <key> \
   --r2-secret-key <secret>
 
 # Batch-score cards and upload serving artifact
 # Note: conformal correction is currently passed in manually if used.
-gamecards-score --model-dir models/ --features features.csv --upload \
+gmestart-score --model-dir models/ --features features.csv --upload \
   --conformal-correction <optional_log_scale_width_adjustment> \
   --r2-endpoint https://<account_id>.r2.cloudflarestorage.com \
   --r2-access-key <key> \

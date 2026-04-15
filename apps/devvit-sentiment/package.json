@@ -1,17 +1,18 @@
 {
-  "name": "gamecards-sentiment",
-  "version": "0.0.1",
+  "name": "gmestart999",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "devvit playtest",
-    "upload": "devvit upload",
-    "install": "devvit install"
+    "dev": "npx devvit playtest",
+    "upload": "npx devvit upload",
+    "deploy": "npx devvit install"
   },
   "dependencies": {
     "@devvit/public-api": "0.12.19"
   },
   "devDependencies": {
     "@devvit/tsconfig": "0.12.19"
-  }
+  },
+  "license": "BSD-3-Clause"
 }

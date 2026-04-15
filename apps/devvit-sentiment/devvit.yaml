@@ -1,4 +1,6 @@
-name: gamecards-sentiment
+name: gmestart999
 version: 0.0.1
-slug: gamecards-sentiment
-description: Collects card mentions and sentiment from trading card subreddits for the GameCards pricing engine.
+slug: gmestart-sentiment
+description: >-
+  Collects card mentions and sentiment from trading card subreddits for the
+  GMEstart pricing engine.

@@ -106,7 +106,7 @@ app.get("/", async (c) => {
   const isStale = hoursSince === null || hoursSince > 36;
 
   return c.json({
-    service: "GameCards Dynamic Pricing Engine",
+    service: "GMEstart Dynamic Pricing Engine",
     version: "1.0.0",
     status: isStale ? "degraded" : "healthy",
     environment: c.env.ENVIRONMENT || "unknown",
