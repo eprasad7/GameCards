@@ -142,13 +142,17 @@ export function MarketOverview({ alerts = [], onNavigate }: MarketOverviewProps)
                   <button
                     key={alert.id}
                     onClick={() => handleCardClick(alert.card_id)}
-                    className={`flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
+                    className={`flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover min-h-[56px] ${
                       i < Math.min(urgentAlerts.length, 4) - 1 ? "border-b border-border" : ""
                     }`}
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-text-primary truncate">{alert.card_name}</p>
-                      <p className="mt-0.5 text-xs text-text-secondary truncate">{alert.message}</p>
+                      <p className="mt-1 text-xs text-text-secondary leading-relaxed line-clamp-2">{alert.message}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">{alert.alert_type.replace(/_/g, " ")}</span>
+                        <span className="text-[11px] text-text-muted">{new Date(alert.created_at).toLocaleTimeString()}</span>
+                      </div>
                     </div>
                     <TrustBadge variant={alert.magnitude >= 3 ? "manual-review" : "sentiment-spike"} />
                     <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" />
@@ -218,24 +222,25 @@ export function MarketOverview({ alerts = [], onNavigate }: MarketOverviewProps)
               <button
                 key={m.card_id}
                 onClick={() => handleCardClick(m.card_id)}
-                className={`flex w-full items-center justify-between px-5 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
+                className={`flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover min-h-[56px] ${
                   i < topBuys.length - 1 ? "border-b border-border" : ""
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-buy/10 text-xs font-bold text-buy">{i + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
-                    <p className="text-xs text-text-muted">{m.grading_company} {m.grade} · ${m.recent_avg.toFixed(0)}</p>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-buy/10 text-xs font-bold text-buy">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-text-primary truncate">{m.name}</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">{m.grading_company} {m.grade}</span>
+                    <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">{m.category.replace(/_/g, " ")}</span>
                   </div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <span className="text-sm font-bold text-sell">{m.change_pct.toFixed(1)}%</span>
-                  <p className="text-[11px] text-text-muted">was ${m.prior_avg.toFixed(0)}</p>
+                  <p className="text-base font-bold text-text-primary">${m.recent_avg.toFixed(0)}</p>
+                  <p className="text-xs font-semibold text-sell">{m.change_pct.toFixed(1)}% <span className="font-normal text-text-muted">from ${m.prior_avg.toFixed(0)}</span></p>
                 </div>
               </button>
             )) : (
-              <div className="px-5 py-8 text-center text-sm text-text-muted">No opportunities detected this week</div>
+              <div className="px-5 py-10 text-center text-sm text-text-muted">No opportunities detected this week</div>
             )}
           </div>
         </section>
@@ -253,13 +258,18 @@ export function MarketOverview({ alerts = [], onNavigate }: MarketOverviewProps)
                 <button
                   key={card.card_id}
                   onClick={() => handleCardClick(card.card_id)}
-                  className={`flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-bg-hover min-h-[44px] ${
+                  className={`flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-bg-hover min-h-[56px] ${
                     i < Math.min(staleCards.length, 5) - 1 ? "border-b border-border" : ""
                   }`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-text-primary truncate">{card.name}</p>
-                    <p className="text-xs text-text-muted">{card.category.replace(/_/g, " ")}</p>
+                    <p className="text-sm font-semibold text-text-primary truncate">{card.name}</p>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <span className="rounded bg-bg-secondary px-1.5 py-0.5 text-[10px] font-medium text-text-muted">{card.category.replace(/_/g, " ")}</span>
+                      {card.fair_value != null && (
+                        <span className="text-[11px] text-text-muted">${card.fair_value.toFixed(0)} fair value</span>
+                      )}
+                    </div>
                   </div>
                   <TrustBadge
                     variant={card.staleness === "no_prediction" ? "manual-review" : "stale"}
